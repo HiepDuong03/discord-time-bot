@@ -179,12 +179,12 @@ export async function handleButtonInteraction(interaction) {
 
   // 2. NÚT HẾT CA (CHECK-OUT / 퇴근)
   if (customId === 'btn_checkout') {
+    await interaction.deferReply({ ephemeral: true });
     const result = await endShift(user.id);
 
     if (!result.success) {
-      return interaction.reply({
-        content: `⚠️ **Thông báo / 알림:** ${result.message}\n*(현재 진행 중인 근무가 없습니다.)*`,
-        ephemeral: true
+      return interaction.editReply({
+        content: `⚠️ **Thông báo / 알림:** ${result.message}\n*(현재 진행 중인 근무가 없습니다.)*`
       });
     }
 
@@ -218,14 +218,14 @@ export async function handleButtonInteraction(interaction) {
       .setFooter({ text: 'Gamefy Base Teams • Shift Completed' })
       .setTimestamp();
 
-    return interaction.reply({
-      embeds: [embed],
-      ephemeral: true
+    return interaction.editReply({
+      embeds: [embed]
     });
   }
 
   // 3. NÚT XEM TIẾN ĐỘ CÁ NHÂN (STATUS / 내 근무)
   if (customId === 'btn_status') {
+    await interaction.deferReply({ ephemeral: true });
     const summary = await getDaySummaryForUser(user.id);
     const totalText = formatMinutes(summary.totalMinutes);
     const remainingText = formatMinutes(summary.remainingMinutes);
@@ -257,25 +257,23 @@ export async function handleButtonInteraction(interaction) {
       .setFooter({ text: `Chu kỳ làm việc: ${summary.workDate}` })
       .setTimestamp();
 
-    return interaction.reply({
-      embeds: [embed],
-      ephemeral: true
+    return interaction.editReply({
+      embeds: [embed]
     });
   }
 
   // 4. NÚT XEM TRẠNG THÁI NICK GAME TOÀN TEAM (ACC STATUS / 계정 현황)
   if (customId === 'btn_acc_status') {
+    await interaction.deferReply({ ephemeral: true });
     const result = await buildAccountStatusEmbed();
     if (!result.hasData) {
-      return interaction.reply({
-        content: result.message,
-        ephemeral: true
+      return interaction.editReply({
+        content: result.message
       });
     }
 
-    return interaction.reply({
-      embeds: [result.embed],
-      ephemeral: true
+    return interaction.editReply({
+      embeds: [result.embed]
     });
   }
 

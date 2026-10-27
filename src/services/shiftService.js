@@ -328,20 +328,65 @@ export async function getAccountDailySummary(accountCode, workDate = getWorkDate
 }
 
 /**
- * Lấy danh sách toàn bộ các Nick Game và tiến độ ngày hôm nay (Chỉ lấy Nick đang kích hoạt)
+ * Lấy danh sách toàn bộ các Nick Game và tiến độ ngày hôm nay (1 Single SQL Query siêu tốc)
  */
 export async function getAllAccountsTodaySummary(workDate = getWorkDate()) {
-  const accountsRes = await db.execute({
-    sql: `SELECT DISTINCT account_code FROM accounts WHERE is_active = 1`,
-    args: []
-  });
+  const sql = `
+    SELECT 
+      a.account_code,
+      COALESCE(a.daily_target_hours, 8.0) as target_hours,
+      COALESCE(cs.completed_minutes, 0) as completed_minutes,
+      act.id as active_shift_id,
+      act.check_in as active_check_in,
+      act.user_id as active_user_id,
+      act.display_name as active_farmer_name
+    FROM accounts a
+    LEFT JOIN (
+      SELECT account_code, SUM(duration_minutes) as completed_minutes
+      FROM shifts
+      WHERE work_date = ? AND status IN ('COMPLETED', 'ADJUSTED')
+      GROUP BY account_code
+    ) cs ON a.account_code = cs.account_code
+    LEFT JOIN (
+      SELECT s.id, s.account_code, s.check_in, s.user_id, u.display_name
+      FROM shifts s
+      JOIN users u ON s.user_id = u.discord_id
+      WHERE s.status = 'ACTIVE'
+    ) act ON a.account_code = act.account_code
+    WHERE a.is_active = 1
+  `;
 
-  const accounts = [];
-  for (const a of accountsRes.rows) {
-    if (!a.account_code) continue;
-    const summary = await getAccountDailySummary(a.account_code, workDate);
-    accounts.push(summary);
-  }
+  const res = await db.execute({ sql, args: [workDate] });
+  const now = Date.now();
+
+  const accounts = res.rows.map(row => {
+    const targetHours = Number(row.target_hours);
+    const completedMinutes = Number(row.completed_minutes);
+
+    let activeMinutes = 0;
+    if (row.active_check_in) {
+      const diffMs = now - new Date(row.active_check_in).getTime();
+      activeMinutes = Math.max(1, Math.round(diffMs / 60000));
+    }
+
+    const totalMinutes = completedMinutes + activeMinutes;
+    const targetMinutes = Math.round(targetHours * 60);
+    const remainingMinutes = Math.max(0, targetMinutes - totalMinutes);
+
+    return {
+      accountCode: row.account_code,
+      workDate,
+      targetHours,
+      completedMinutes,
+      activeMinutes,
+      totalMinutes,
+      remainingMinutes,
+      isAchieved: totalMinutes >= targetMinutes,
+      hasActiveShift: !!row.active_shift_id,
+      activeFarmerName: row.active_farmer_name,
+      activeFarmerId: row.active_user_id
+    };
+  });
 
   return accounts.sort((a, b) => {
     if (a.hasActiveShift && !b.hasActiveShift) return -1;
