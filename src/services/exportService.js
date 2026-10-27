@@ -132,9 +132,9 @@ export function summarizeShifts(shifts, slaHours = 8) {
  * Xuất file Excel 3 Sheet chuẩn kiểm toán (100% công thức động)
  */
 export async function exportTimesheetToExcel(fromDate, toDate, slaHours = 8) {
-  // Lấy dữ liệu ca làm từ SQLite
-  const rawShifts = db.prepare(`
-    SELECT s.id, 
+  // Lấy dữ liệu ca làm từ Database
+  const rawShiftsRes = await db.execute({
+    sql: `SELECT s.id, 
            COALESCE(u.display_name, s.user_id) as display_name, 
            s.user_id as discord_id, 
            COALESCE(s.account_code, 'DEFAULT_ACC') as account_code, 
@@ -147,8 +147,10 @@ export async function exportTimesheetToExcel(fromDate, toDate, slaHours = 8) {
     FROM shifts s
     LEFT JOIN users u ON s.user_id = u.discord_id
     WHERE s.work_date >= ? AND s.work_date <= ?
-    ORDER BY s.check_in ASC
-  `).all(fromDate, toDate);
+    ORDER BY s.check_in ASC`,
+    args: [fromDate, toDate]
+  });
+  const rawShifts = rawShiftsRes.rows;
 
   const shifts = rawShifts.map(s => ({
     id: 'S' + String(s.id).padStart(4, '0'),

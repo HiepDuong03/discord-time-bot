@@ -21,7 +21,7 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction) {
   const workDate = getWorkDate();
-  const teamData = getTeamTodaySummary(workDate);
+  const teamData = await getTeamTodaySummary(workDate);
   const hoursLeftBeforeCutoff = getHoursUntilCutoff().toFixed(1);
 
   if (teamData.length === 0) {

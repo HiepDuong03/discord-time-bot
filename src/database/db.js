@@ -1,39 +1,30 @@
-import Database from 'better-sqlite3';
+import { createClient } from '@libsql/client';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { config } from '../config/env.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Đảm bảo thư mục data tồn tại
-const dataDir = path.resolve(__dirname, '../../data');
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
+const url = config.tursoDatabaseUrl || process.env.TURSO_DATABASE_URL || 'file:data/timesheet.db';
+const authToken = config.tursoAuthToken || process.env.TURSO_AUTH_TOKEN || undefined;
 
-const dbPath = path.join(dataDir, 'timesheet.db');
-const db = new Database(dbPath);
+export const db = createClient({
+  url,
+  authToken
+});
 
-// Kích hoạt WAL mode để tăng tốc độ ghi và an toàn dữ liệu
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
-
-// Kiểm tra và tự động migration cột account_code nếu chưa có
-const tableInfo = db.prepare("PRAGMA table_info(shifts)").all();
-if (tableInfo.length > 0) {
-  const hasAccountCode = tableInfo.some(col => col.name === 'account_code');
-  if (!hasAccountCode) {
-    db.exec("ALTER TABLE shifts ADD COLUMN account_code TEXT DEFAULT 'DEFAULT_ACC'");
-    console.log('[DATABASE] Đã tự động migration: Thêm cột account_code vào bảng shifts.');
+export async function initDatabase() {
+  try {
+    const schemaPath = path.join(__dirname, 'schema.sql');
+    const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+    await db.executeMultiple(schemaSql);
+    const mode = url.startsWith('file:') ? 'Local SQLite (File)' : 'Turso Cloud (libSQL 24/7)';
+    console.log(`[DATABASE] ✅ Kết nối thành công Cơ Sở Dữ Liệu: ${mode}`);
+  } catch (err) {
+    console.error('[DATABASE ERROR] ❌ Lỗi khởi tạo schema:', err.message);
   }
 }
-
-// Đọc và khởi tạo schema (tạo bảng accounts và indexes nếu chưa có)
-const schemaPath = path.join(__dirname, 'schema.sql');
-const schemaSql = fs.readFileSync(schemaPath, 'utf8');
-db.exec(schemaSql);
-
-console.log(`[DATABASE] Đã kết nối thành công SQLite tại: ${dbPath}`);
 
 export default db;

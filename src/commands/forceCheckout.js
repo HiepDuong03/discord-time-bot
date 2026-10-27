@@ -40,7 +40,7 @@ export async function execute(interaction) {
     let targetName = '';
 
     if (targetUser) {
-      result = forceEndShiftByUser(targetUser.id, leaderName, reason);
+      result = await forceEndShiftByUser(targetUser.id, leaderName, reason);
       targetName = `<@${targetUser.id}>`;
 
       // Gỡ role On-Shift nếu có
@@ -52,7 +52,7 @@ export async function execute(interaction) {
       }
     } else {
       const cleanAcc = normalizeAccountCode(targetAccount);
-      result = forceReleaseAccount(cleanAcc, leaderName, reason);
+      result = await forceReleaseAccount(cleanAcc, leaderName, reason);
       targetName = `Nick \`[${cleanAcc}]\``;
     }
 

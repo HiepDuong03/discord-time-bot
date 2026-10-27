@@ -2,7 +2,7 @@ import QuickChart from 'quickchart-js';
 import { getTeamTodaySummary } from './shiftService.js';
 
 export async function generateDailyBarChartUrl(workDate) {
-  const teamData = getTeamTodaySummary(workDate);
+  const teamData = await getTeamTodaySummary(workDate);
   if (teamData.length === 0) {
     return null;
   }

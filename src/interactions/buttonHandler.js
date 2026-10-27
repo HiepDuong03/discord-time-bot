@@ -72,7 +72,7 @@ export async function handleButtonInteraction(interaction) {
 
   // 2. NÚT HẾT CA (CHECK-OUT / 퇴근)
   if (customId === 'btn_checkout') {
-    const result = endShift(user.id);
+    const result = await endShift(user.id);
 
     if (!result.success) {
       return interaction.reply({
@@ -119,7 +119,7 @@ export async function handleButtonInteraction(interaction) {
 
   // 3. NÚT XEM TIẾN ĐỘ HÔM NAY (STATUS / 근무 현황)
   if (customId === 'btn_status') {
-    const summary = getDaySummaryForUser(user.id);
+    const summary = await getDaySummaryForUser(user.id);
     const totalText = formatMinutes(summary.totalMinutes);
     const remainingText = formatMinutes(summary.remainingMinutes);
     const hoursLeftBeforeCutoff = getHoursUntilCutoff().toFixed(1);
@@ -168,7 +168,7 @@ export async function handleModalInteraction(interaction) {
   const accountCode = interaction.fields.getTextInputValue('account_code_input').trim();
   const note = interaction.fields.getTextInputValue('note_input')?.trim() || '';
 
-  const result = startShiftWithAccount(user.id, displayName, accountCode, note);
+  const result = await startShiftWithAccount(user.id, displayName, accountCode, note);
 
   if (!result.success) {
     if (result.errorType === 'ACCOUNT_OCCUPIED') {
@@ -199,7 +199,7 @@ export async function handleModalInteraction(interaction) {
   const noteStr = note ? `\n• **Ghi chú:** *${note}*` : '';
 
   // Lấy tiến độ hiện tại của Nick này trong ngày để báo cho member biết
-  const accSummary = getAccountDailySummary(result.accountCode, result.workDate);
+  const accSummary = await getAccountDailySummary(result.accountCode, result.workDate);
   const accDoneSoFar = formatMinutes(accSummary.completedMinutes);
 
   const embed = new EmbedBuilder()

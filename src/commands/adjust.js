@@ -28,7 +28,7 @@ export async function execute(interaction) {
   const leaderName = interaction.member?.displayName || interaction.user.username;
 
   try {
-    const result = adjustShiftTime(targetUser.id, minutes, reason, leaderName);
+    const result = await adjustShiftTime(targetUser.id, minutes, reason, leaderName);
     const sign = minutes > 0 ? '+' : '';
 
     return interaction.reply({

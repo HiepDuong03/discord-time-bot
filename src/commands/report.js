@@ -31,7 +31,7 @@ export async function execute(interaction) {
 
   try {
     const chartUrl = await generateDailyBarChartUrl(targetDate);
-    const teamData = getTeamTodaySummary(targetDate);
+    const teamData = await getTeamTodaySummary(targetDate);
 
     if (teamData.length === 0) {
       return interaction.editReply({

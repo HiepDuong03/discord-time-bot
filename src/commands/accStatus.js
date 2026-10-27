@@ -20,7 +20,7 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction) {
   const workDate = getWorkDate();
-  const accList = getAllAccountsTodaySummary(workDate);
+  const accList = await getAllAccountsTodaySummary(workDate);
   const hoursLeft = getHoursUntilCutoff().toFixed(1);
 
   if (accList.length === 0) {

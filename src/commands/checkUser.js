@@ -34,15 +34,17 @@ export async function execute(interaction) {
   const customDate = interaction.options.getString('date');
   const targetDate = customDate ? customDate.trim() : getWorkDate();
 
-  const summary = getDaySummaryForUser(targetUser.id, targetDate);
+  const summary = await getDaySummaryForUser(targetUser.id, targetDate);
 
   // Lấy danh sách các ca làm của user trong ngày
-  const shifts = db.prepare(`
-    SELECT id, check_in, check_out, duration_minutes, status, note
-    FROM shifts
-    WHERE user_id = ? AND work_date = ?
-    ORDER BY check_in ASC
-  `).all(targetUser.id, targetDate);
+  const shiftsRes = await db.execute({
+    sql: `SELECT id, check_in, check_out, duration_minutes, status, note
+          FROM shifts
+          WHERE user_id = ? AND work_date = ?
+          ORDER BY check_in ASC`,
+    args: [targetUser.id, targetDate]
+  });
+  const shifts = shiftsRes.rows;
 
   const totalStr = formatMinutes(summary.totalMinutes);
   const remainingStr = formatMinutes(summary.remainingMinutes);

@@ -7,7 +7,7 @@ import {
 } from 'discord.js';
 import http from 'node:http';
 import { config, validateConfig } from './config/env.js';
-import db from './database/db.js';
+import db, { initDatabase } from './database/db.js';
 import { handleButtonInteraction, handleModalInteraction } from './interactions/buttonHandler.js';
 import { initReminderCron } from './services/reminderService.js';
 
@@ -104,6 +104,9 @@ client.once('ready', async () => {
   console.log(`\n✅ Bot đã đăng nhập thành công với tên: ${client.user.tag}`);
   console.log(`⚡ Mốc chốt ngày: ${config.cutoffHour}:00 sáng | Chỉ tiêu: ${config.dailyTargetHours}h/ngày`);
   
+  // Khởi tạo và đồng bộ Database Cloud
+  await initDatabase();
+
   // Đăng ký slash commands
   await registerSlashCommands();
 

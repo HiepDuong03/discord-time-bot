@@ -29,7 +29,7 @@ export async function sendDailyReminders(client, alertType = '18_PM') {
     }
 
     const guild = channel.guild;
-    const teamSummary = getTeamTodaySummary();
+    const teamSummary = await getTeamTodaySummary();
     if (teamSummary.length === 0) return;
 
     const now = new Date();

@@ -33,146 +33,139 @@ export function getWorkDate(targetDate = new Date()) {
 /**
  * Đăng ký hoặc cập nhật thông tin thành viên
  */
-export function registerOrUpdateUser(discordId, displayName, targetHours = config.dailyTargetHours) {
-  const stmt = db.prepare(`
-    INSERT INTO users (discord_id, display_name, daily_target_hours)
-    VALUES (?, ?, ?)
-    ON CONFLICT(discord_id) DO UPDATE SET
-      display_name = excluded.display_name
-  `);
-  stmt.run(discordId, displayName, targetHours);
+export async function registerOrUpdateUser(discordId, displayName, targetHours = config.dailyTargetHours) {
+  await db.execute({
+    sql: `INSERT INTO users (discord_id, display_name, daily_target_hours)
+          VALUES (?, ?, ?)
+          ON CONFLICT(discord_id) DO UPDATE SET display_name = excluded.display_name`,
+    args: [discordId, displayName, targetHours]
+  });
 }
 
 /**
  * Đăng ký tài khoản game vào danh mục nếu chưa có
  */
-export function registerOrUpdateAccount(accountCode, targetHours = 8.0) {
+export async function registerOrUpdateAccount(accountCode, targetHours = 8.0) {
   const cleanCode = normalizeAccountCode(accountCode);
-  const stmt = db.prepare(`
-    INSERT INTO accounts (account_code, daily_target_hours)
-    VALUES (?, ?)
-    ON CONFLICT(account_code) DO NOTHING
-  `);
-  stmt.run(cleanCode, targetHours);
+  await db.execute({
+    sql: `INSERT INTO accounts (account_code, daily_target_hours)
+          VALUES (?, ?)
+          ON CONFLICT(account_code) DO NOTHING`,
+    args: [cleanCode, targetHours]
+  });
   return cleanCode;
 }
 
 /**
  * Lấy ca làm việc đang hoạt động của user
  */
-export function getActiveShift(discordId) {
-  const stmt = db.prepare(`
-    SELECT * FROM shifts
-    WHERE user_id = ? AND status = 'ACTIVE'
-    ORDER BY id DESC LIMIT 1
-  `);
-  return stmt.get(discordId);
+export async function getActiveShift(discordId) {
+  const res = await db.execute({
+    sql: `SELECT * FROM shifts
+          WHERE user_id = ? AND status = 'ACTIVE'
+          ORDER BY id DESC LIMIT 1`,
+    args: [discordId]
+  });
+  return res.rows[0] || null;
 }
 
 /**
  * Kiểm tra xem 1 Nick game hiện tại có ai đang cày không (Chống tranh acc)
  */
-export function getActiveShiftByAccount(accountCode) {
+export async function getActiveShiftByAccount(accountCode) {
   const cleanCode = normalizeAccountCode(accountCode);
-  const stmt = db.prepare(`
-    SELECT s.*, u.display_name
-    FROM shifts s
-    JOIN users u ON s.user_id = u.discord_id
-    WHERE s.account_code = ? AND s.status = 'ACTIVE'
-    ORDER BY s.id DESC LIMIT 1
-  `);
-  return stmt.get(cleanCode);
+  const res = await db.execute({
+    sql: `SELECT s.*, u.display_name
+          FROM shifts s
+          JOIN users u ON s.user_id = u.discord_id
+          WHERE s.account_code = ? AND s.status = 'ACTIVE'
+          ORDER BY s.id DESC LIMIT 1`,
+    args: [cleanCode]
+  });
+  return res.rows[0] || null;
 }
 
 /**
  * Bắt đầu ca làm việc có gắn Nick game (Nguyên tử - Atomic Transaction)
  */
-export function startShiftWithAccount(discordId, displayName, accountCode, note = '') {
+export async function startShiftWithAccount(discordId, displayName, accountCode, note = '') {
   const cleanAccount = normalizeAccountCode(accountCode);
 
-  const runStartShiftTx = db.transaction(() => {
-    registerOrUpdateUser(discordId, displayName);
-    registerOrUpdateAccount(cleanAccount);
+  await registerOrUpdateUser(discordId, displayName);
+  await registerOrUpdateAccount(cleanAccount);
 
-    // 1. Kiểm tra chính Member này đã có ca đang chạy chưa
-    const userActiveShift = getActiveShift(discordId);
-    if (userActiveShift) {
-      return {
-        success: false,
-        errorType: 'USER_BUSY',
-        message: `Bạn đang trong ca cày Nick [${userActiveShift.account_code}] từ lúc ${new Date(userActiveShift.check_in).toLocaleTimeString('vi-VN')}. Hãy bấm "Hết ca" trước!`,
-        shift: userActiveShift
-      };
-    }
-
-    // 2. Kiểm tra xem Nick này có ai khác đang cày không
-    const accActiveShift = getActiveShiftByAccount(cleanAccount);
-    if (accActiveShift) {
-      const inTimeStr = new Date(accActiveShift.check_in).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-      return {
-        success: false,
-        errorType: 'ACCOUNT_OCCUPIED',
-        message: `Nick [${cleanAccount}] đang được **${accActiveShift.display_name}** cày từ **${inTimeStr}**! Vui lòng chọn Nick khác hoặc liên hệ bàn giao ca.`,
-        occupiedBy: accActiveShift.display_name
-      };
-    }
-
-    // 3. Hợp lệ -> Tạo ca mới
-    const now = new Date();
-    const workDate = getWorkDate(now);
-
-    const stmt = db.prepare(`
-      INSERT INTO shifts (user_id, account_code, check_in, work_date, status, note)
-      VALUES (?, ?, ?, ?, 'ACTIVE', ?)
-    `);
-    const result = stmt.run(discordId, cleanAccount, now.toISOString(), workDate, note);
-
-    return {
-      success: true,
-      shiftId: result.lastInsertRowid,
-      accountCode: cleanAccount,
-      checkInTime: now,
-      workDate
-    };
-  });
-
-  return runStartShiftTx();
-}
-
-/**
- * Kết thúc ca làm việc (Có chốt chặn an toàn tối đa 14 tiếng)
- */
-export function endShift(discordId) {
-  const activeShift = getActiveShift(discordId);
-  if (!activeShift) {
+  // 1. Kiểm tra chính Member này đã có ca đang chạy chưa
+  const userActiveShift = await getActiveShift(discordId);
+  if (userActiveShift) {
     return {
       success: false,
-      message: 'Bạn hiện không có ca làm việc nào đang mở để kết thúc!'
+      errorType: 'USER_HAS_ACTIVE_SHIFT',
+      message: `Bạn đang có ca làm việc dở dang trên Nick [${userActiveShift.account_code}]. Vui lòng bấm "Hết Ca" trước khi nhận Nick mới!`
+    };
+  }
+
+  // 2. Chống tranh Nick: Kiểm tra xem Nick này đã có ai đang cày chưa
+  const accountActiveShift = await getActiveShiftByAccount(cleanAccount);
+  if (accountActiveShift) {
+    return {
+      success: false,
+      errorType: 'ACCOUNT_OCCUPIED',
+      occupantName: accountActiveShift.display_name,
+      message: `Nick [${cleanAccount}] hiện đang được cày bởi **${accountActiveShift.display_name}** (<@${accountActiveShift.user_id}>)! Vui lòng chọn Nick khác hoặc đợi đổi ca.`
     };
   }
 
   const now = new Date();
-  const checkIn = new Date(activeShift.check_in);
-  const durationMs = now.getTime() - checkIn.getTime();
-  let durationMinutes = Math.max(1, Math.round(durationMs / 60000));
-  let noteAppend = activeShift.note || '';
+  const workDate = getWorkDate(now);
+  const checkInIso = now.toISOString();
 
-  // Chốt chặn an toàn tối đa 14 tiếng
-  if (durationMinutes > MAX_SHIFT_MINUTES) {
-    const rawHours = (durationMinutes / 60).toFixed(1);
-    durationMinutes = MAX_SHIFT_MINUTES;
-    noteAppend += ` [Auto-capped tại 14h do quên checkout (${rawHours}h)]`;
+  const insertRes = await db.execute({
+    sql: `INSERT INTO shifts (user_id, account_code, check_in, work_date, status, note)
+          VALUES (?, ?, ?, ?, 'ACTIVE', ?)`,
+    args: [discordId, cleanAccount, checkInIso, workDate, note]
+  });
+
+  return {
+    success: true,
+    shiftId: Number(insertRes.lastInsertRowid),
+    accountCode: cleanAccount,
+    checkInTime: now,
+    workDate
+  };
+}
+
+/**
+ * Kết thúc ca làm việc (Check-out)
+ */
+export async function endShift(discordId) {
+  const activeShift = await getActiveShift(discordId);
+  if (!activeShift) {
+    return {
+      success: false,
+      message: 'Bạn hiện không có ca làm việc nào đang hoạt động.'
+    };
   }
 
-  const updateStmt = db.prepare(`
-    UPDATE shifts
-    SET check_out = ?, duration_minutes = ?, status = 'COMPLETED', note = ?
-    WHERE id = ?
-  `);
-  updateStmt.run(now.toISOString(), durationMinutes, noteAppend, activeShift.id);
+  const checkIn = new Date(activeShift.check_in);
+  const now = new Date();
+  let durationMinutes = Math.round((now.getTime() - checkIn.getTime()) / (1000 * 60));
+  if (durationMinutes < 1) durationMinutes = 1;
 
-  const memberSummary = getDaySummaryForUser(discordId, activeShift.work_date);
-  const accountSummary = getAccountDailySummary(activeShift.account_code, activeShift.work_date);
+  if (durationMinutes > MAX_SHIFT_MINUTES) {
+    durationMinutes = MAX_SHIFT_MINUTES;
+  }
+
+  const checkOutIso = now.toISOString();
+
+  await db.execute({
+    sql: `UPDATE shifts 
+          SET check_out = ?, duration_minutes = ?, status = 'COMPLETED'
+          WHERE id = ?`,
+    args: [checkOutIso, durationMinutes, activeShift.id]
+  });
+
+  const memberSummary = await getDaySummaryForUser(discordId, activeShift.work_date);
+  const accountSummary = await getAccountDailySummary(activeShift.account_code, activeShift.work_date);
 
   return {
     success: true,
@@ -180,23 +173,21 @@ export function endShift(discordId) {
     accountCode: activeShift.account_code,
     durationMinutes,
     memberTotalToday: memberSummary.totalMinutes,
-    memberTargetHours: memberSummary.targetHours,
-    accountTotalToday: accountSummary.totalMinutes,
-    accountTargetHours: accountSummary.targetHours,
-    isAccountAchieved: accountSummary.isAchieved,
+    accountTotalToday: accountSummary.completedMinutes,
+    isAccountAchieved: accountSummary.completedMinutes >= 480,
     workDate: activeShift.work_date
   };
 }
 
 /**
- * Cưỡng chế kết thúc ca của 1 Member (Dành cho Leader giải cứu Nick khi member ngủ quên)
+ * Cưỡng chế kết thúc ca của 1 Member (Dành cho Quản lý khi member ngủ quên)
  */
-export function forceEndShiftByUser(userId, leaderName, reason) {
-  const activeShift = getActiveShift(userId);
+export async function forceEndShiftByUser(userId, leaderName, reason) {
+  const activeShift = await getActiveShift(userId);
   if (!activeShift) {
     return {
       success: false,
-      message: 'Thành viên này hiện không có ca làm việc nào đang hoạt động.'
+      message: `Thành viên <@${userId}> hiện không có ca làm việc nào đang chạy.`
     };
   }
 
@@ -208,11 +199,12 @@ export function forceEndShiftByUser(userId, leaderName, reason) {
 
   const note = `[FORCE_CHECKOUT bởi ${leaderName}]: ${reason}`;
 
-  db.prepare(`
-    UPDATE shifts
-    SET check_out = ?, duration_minutes = ?, status = 'COMPLETED', note = ?
-    WHERE id = ?
-  `).run(now.toISOString(), durationMinutes, note, activeShift.id);
+  await db.execute({
+    sql: `UPDATE shifts
+          SET check_out = ?, duration_minutes = ?, status = 'COMPLETED', note = ?
+          WHERE id = ?`,
+    args: [now.toISOString(), durationMinutes, note, activeShift.id]
+  });
 
   return {
     success: true,
@@ -225,9 +217,9 @@ export function forceEndShiftByUser(userId, leaderName, reason) {
 /**
  * Cưỡng chế giải phóng 1 Nick Game đang bị kẹt
  */
-export function forceReleaseAccount(accountCode, leaderName, reason) {
+export async function forceReleaseAccount(accountCode, leaderName, reason) {
   const cleanCode = normalizeAccountCode(accountCode);
-  const activeShift = getActiveShiftByAccount(cleanCode);
+  const activeShift = await getActiveShiftByAccount(cleanCode);
 
   if (!activeShift) {
     return {
@@ -242,20 +234,23 @@ export function forceReleaseAccount(accountCode, leaderName, reason) {
 /**
  * Thống kê tổng giờ làm của 1 Member trong ngày
  */
-export function getDaySummaryForUser(discordId, workDate = getWorkDate()) {
-  const userStmt = db.prepare('SELECT daily_target_hours FROM users WHERE discord_id = ?');
-  const user = userStmt.get(discordId);
-  const targetHours = user?.daily_target_hours || config.dailyTargetHours;
+export async function getDaySummaryForUser(discordId, workDate = getWorkDate()) {
+  const userRes = await db.execute({
+    sql: 'SELECT daily_target_hours FROM users WHERE discord_id = ?',
+    args: [discordId]
+  });
+  const user = userRes.rows[0];
+  const targetHours = user?.daily_target_hours ? Number(user.daily_target_hours) : config.dailyTargetHours;
 
-  const shiftStmt = db.prepare(`
-    SELECT SUM(duration_minutes) as total_minutes
-    FROM shifts
-    WHERE user_id = ? AND work_date = ? AND status IN ('COMPLETED', 'ADJUSTED')
-  `);
-  const result = shiftStmt.get(discordId, workDate);
-  const totalMinutes = result?.total_minutes || 0;
+  const shiftRes = await db.execute({
+    sql: `SELECT COALESCE(SUM(duration_minutes), 0) as total_minutes
+          FROM shifts
+          WHERE user_id = ? AND work_date = ? AND status IN ('COMPLETED', 'ADJUSTED')`,
+    args: [discordId, workDate]
+  });
+  const totalMinutes = Number(shiftRes.rows[0]?.total_minutes || 0);
 
-  const activeShift = getActiveShift(discordId);
+  const activeShift = await getActiveShift(discordId);
   let activeMinutes = 0;
   let activeAccount = null;
   if (activeShift && activeShift.work_date === workDate) {
@@ -284,21 +279,24 @@ export function getDaySummaryForUser(discordId, workDate = getWorkDate()) {
 /**
  * Thống kê tổng giờ cày của 1 NICK GAME trong ngày
  */
-export function getAccountDailySummary(accountCode, workDate = getWorkDate()) {
+export async function getAccountDailySummary(accountCode, workDate = getWorkDate()) {
   const cleanCode = normalizeAccountCode(accountCode);
-  const accStmt = db.prepare('SELECT daily_target_hours FROM accounts WHERE account_code = ?');
-  const acc = accStmt.get(cleanCode);
-  const targetHours = acc?.daily_target_hours || 8.0;
+  const accRes = await db.execute({
+    sql: 'SELECT daily_target_hours FROM accounts WHERE account_code = ?',
+    args: [cleanCode]
+  });
+  const acc = accRes.rows[0];
+  const targetHours = acc?.daily_target_hours ? Number(acc.daily_target_hours) : 8.0;
 
-  const sumStmt = db.prepare(`
-    SELECT SUM(duration_minutes) as total_minutes
-    FROM shifts
-    WHERE account_code = ? AND work_date = ? AND status IN ('COMPLETED', 'ADJUSTED')
-  `);
-  const sumResult = sumStmt.get(cleanCode, workDate);
-  const completedMinutes = sumResult?.total_minutes || 0;
+  const sumRes = await db.execute({
+    sql: `SELECT COALESCE(SUM(duration_minutes), 0) as total_minutes
+          FROM shifts
+          WHERE account_code = ? AND work_date = ? AND status IN ('COMPLETED', 'ADJUSTED')`,
+    args: [cleanCode, workDate]
+  });
+  const completedMinutes = Number(sumRes.rows[0]?.total_minutes || 0);
 
-  const activeShift = getActiveShiftByAccount(cleanCode);
+  const activeShift = await getActiveShiftByAccount(cleanCode);
   let activeMinutes = 0;
   let activeFarmerName = null;
   let activeFarmerId = null;
@@ -332,48 +330,72 @@ export function getAccountDailySummary(accountCode, workDate = getWorkDate()) {
 /**
  * Lấy danh sách toàn bộ các Nick Game và tiến độ ngày hôm nay
  */
-export function getAllAccountsTodaySummary(workDate = getWorkDate()) {
-  const accounts = db.prepare(`
-    SELECT DISTINCT account_code FROM accounts
-    UNION
-    SELECT DISTINCT account_code FROM shifts WHERE work_date = ?
-  `).all(workDate);
+export async function getAllAccountsTodaySummary(workDate = getWorkDate()) {
+  const accountsRes = await db.execute({
+    sql: `SELECT DISTINCT account_code FROM accounts
+          UNION
+          SELECT DISTINCT account_code FROM shifts WHERE work_date = ?`,
+    args: [workDate]
+  });
 
-  return accounts.map(a => getAccountDailySummary(a.account_code, workDate));
+  const accounts = [];
+  for (const a of accountsRes.rows) {
+    if (!a.account_code) continue;
+    const summary = await getAccountDailySummary(a.account_code, workDate);
+    accounts.push(summary);
+  }
+
+  return accounts.sort((a, b) => {
+    if (a.hasActiveShift && !b.hasActiveShift) return -1;
+    if (!a.hasActiveShift && b.hasActiveShift) return 1;
+    return b.totalMinutes - a.totalMinutes;
+  });
 }
 
 /**
  * Lấy tổng hợp giờ làm hôm nay của toàn đội
  */
-export function getTeamTodaySummary(workDate = getWorkDate()) {
-  const users = db.prepare('SELECT discord_id, display_name, daily_target_hours FROM users').all();
-  return users.map(user => {
-    const summary = getDaySummaryForUser(user.discord_id, workDate);
-    return {
+export async function getTeamTodaySummary(workDate = getWorkDate()) {
+  const usersRes = await db.execute({
+    sql: `SELECT discord_id, display_name FROM users
+          UNION
+          SELECT DISTINCT user_id as discord_id, user_id as display_name FROM shifts WHERE work_date = ?`,
+    args: [workDate]
+  });
+
+  const team = [];
+  for (const user of usersRes.rows) {
+    const summary = await getDaySummaryForUser(user.discord_id, workDate);
+    team.push({
       discordId: user.discord_id,
       displayName: user.display_name,
       ...summary
-    };
-  });
+    });
+  }
+
+  return team.sort((a, b) => b.totalMinutes - a.totalMinutes);
 }
 
 /**
  * Điều chỉnh giờ làm việc
  */
-export function adjustShiftTime(userId, minutesChange, reason, adjustedBy, accountCode = 'DEFAULT_ACC') {
+export async function adjustShiftTime(userId, minutesChange, reason, adjustedBy, accountCode = 'DEFAULT_ACC') {
   const workDate = getWorkDate();
   const cleanAccount = normalizeAccountCode(accountCode);
-  const insertShift = db.prepare(`
-    INSERT INTO shifts (user_id, account_code, check_in, check_out, duration_minutes, work_date, status, note)
-    VALUES (?, ?, datetime('now'), datetime('now'), ?, ?, 'ADJUSTED', ?)
-  `);
-  const result = insertShift.run(userId, cleanAccount, minutesChange, workDate, `Điều chỉnh bởi ${adjustedBy}: ${reason}`);
 
-  const insertAudit = db.prepare(`
-    INSERT INTO audit_logs (shift_id, user_id, adjusted_by, minute_change, reason)
-    VALUES (?, ?, ?, ?, ?)
-  `);
-  insertAudit.run(result.lastInsertRowid, userId, adjustedBy, minutesChange, reason);
+  const insertShiftRes = await db.execute({
+    sql: `INSERT INTO shifts (user_id, account_code, check_in, check_out, duration_minutes, work_date, status, note)
+          VALUES (?, ?, datetime('now'), datetime('now'), ?, ?, 'ADJUSTED', ?)`,
+    args: [userId, cleanAccount, minutesChange, workDate, `Điều chỉnh bởi ${adjustedBy}: ${reason}`]
+  });
+
+  const shiftId = Number(insertShiftRes.lastInsertRowid);
+
+  await db.execute({
+    sql: `INSERT INTO audit_logs (shift_id, user_id, adjusted_by, minute_change, reason)
+          VALUES (?, ?, ?, ?, ?)`,
+    args: [shiftId, userId, adjustedBy, minutesChange, reason]
+  });
 
   return {
     success: true,

@@ -11,6 +11,8 @@ export const config = {
   dailyTargetHours: parseFloat(process.env.DAILY_TARGET_HOURS || '8.0'),
   cutoffHour: parseInt(process.env.CUTOFF_HOUR || '6', 10),
   timezone: process.env.TIMEZONE || 'Asia/Ho_Chi_Minh',
+  tursoDatabaseUrl: process.env.TURSO_DATABASE_URL || '',
+  tursoAuthToken: process.env.TURSO_AUTH_TOKEN || '',
 };
 
 export function validateConfig() {
