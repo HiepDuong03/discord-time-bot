@@ -4,3 +4,4 @@ exports/
 data/timesheet.db-shm
 data/timesheet.db-wal
 bot_deploy.zip
+sample_excel/
