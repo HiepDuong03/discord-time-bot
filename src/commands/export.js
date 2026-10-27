@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, PermissionFlagsBits, AttachmentBuilder } from 'discord.js';
+import { SlashCommandBuilder, PermissionFlagsBits, AttachmentBuilder, EmbedBuilder } from 'discord.js';
 import { exportTimesheetToExcel } from '../services/exportService.js';
 
 export const data = new SlashCommandBuilder()
@@ -35,12 +35,28 @@ export async function execute(interaction) {
     const result = await exportTimesheetToExcel(fromDate, toDate);
     const attachment = new AttachmentBuilder(result.filePath, { name: result.fileName });
 
+    const embed = new EmbedBuilder()
+      .setTitle('📊 DỮ LIỆU GIỜ LÀM & AUDIT ĐÃ SẴN SÀNG! | 근무 시간 & 감사 데이터')
+      .setDescription(
+        `> **BÁO CÁO TỔNG HỢP & KIỂM TOÁN GIỜ CÀY GAME**\n` +
+        `> *Game Farming Timesheet & SLA Audit Report*\n\n` +
+        '```yaml\n' +
+        `• Kỳ thống kê / 기간     : ${fromDate} ➔ ${toDate}\n` +
+        `• Quân số / 인원         : ${result.userCount} người (명)\n` +
+        `• Tổng giờ làm / 총 근무 : ${result.grandTotalHours}h (toàn đội)\n` +
+        '```\n' +
+        '📁 **Cấu trúc 3 Sheet trong File Excel đính kèm:**\n' +
+        '• **Sheet 1:** Tổng giờ làm từ khoảng thời gian đó\n' +
+        '• **Sheet 2:** Báo Cáo SLA Từng Nick (Account SLA)\n' +
+        '• **Sheet 3:** Nhật Ký Ra Vào Chi Tiết (Raw Shifts Log)\n\n' +
+        '-# 🇰🇷 첨부된 엑셀 파일(3개 시트)을 다운로드하여 정산 및 계정 감사를 확인하세요.'
+      )
+      .setColor('#2ECC71')
+      .setFooter({ text: 'AURA Time Tracking • Excel Audit & Payroll Service' })
+      .setTimestamp();
+
     return interaction.editReply({
-      content: `📊 **BÁO CÁO TÍNH LƯƠNG ĐÃ SẴN SÀNG!**\n` +
-               `• Kỳ thống kê: Từ **${fromDate}** đến **${toDate}**\n` +
-               `• Số lượng nhân sự: **${result.userCount} người**\n` +
-               `• Tổng giờ làm cả đội: **${result.grandTotalHours} giờ**\n\n` +
-               `*File Excel đính kèm gồm 2 Sheet: Sheet 1 tính lương tổng hợp, Sheet 2 chi tiết từng ca.*`,
+      embeds: [embed],
       files: [attachment]
     });
   } catch (error) {

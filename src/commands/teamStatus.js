@@ -41,41 +41,43 @@ export async function execute(interaction) {
 
     if (m.hasActiveShift) {
       activeWorkers.push(
-        `• 🟢 **${m.displayName}** (<@${m.discordId}>)\n` +
-        `  └ Ca hiện tại: **${m.activeMinutes} phút** | Tổng hôm nay: **${totalStr} / ${targetStr}**`
+        `• 🟢 **${m.displayName}** (<@${m.discordId}>) ➔ Ca này: **${m.activeMinutes}p** | Tổng: \`${totalStr} / ${targetStr}\``
       );
     } else {
       const icon = m.isAchieved ? '✅' : m.totalMinutes >= 240 ? '🟡' : '🔴';
       const statusNote = m.isAchieved 
-        ? 'Đã đạt chỉ tiêu 8h / 목표 달성' 
-        : `Còn thiếu: ${neededStr} / 부족`;
+        ? 'Đạt 8h' 
+        : `Thiếu ${neededStr}`;
       offWorkers.push(
-        `• ${icon} **${m.displayName}** (<@${m.discordId}>)\n` +
-        `  └ Tổng hôm nay: **${totalStr} / ${targetStr}** (${statusNote})`
+        `• ${icon} **${m.displayName}** (<@${m.discordId}>) ➔ \`${totalStr} / ${targetStr}\` (${statusNote})`
       );
     }
   }
 
   const embed = new EmbedBuilder()
-    .setTitle(`🛡️ BẢNG THEO DÕI QUÂN SỐ CẢ ĐỘI / 팀 실시간 근무 현황`)
+    .setTitle(`🛡️ QUÂN SỐ & TRẠNG THÁI CẢ ĐỘI | 팀 실시간 현황`)
     .setDescription(
-      `📅 **Ngày tính công / 일자:** \`${workDate}\`\n` +
-      `⏱️ **Thời gian đến 06:00 sáng mai / 마감까지:** \`${hoursLeftBeforeCutoff} tiếng (시간)\`\n` +
-      `👥 **Tổng quân số đã ghi nhận:** \`${teamData.length} người / 명\`\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━`
+      `> **BẢNG ĐIỀU HÀNH QUÂN SỐ & TIẾN ĐỘ THỜI GIAN THỰC**\n` +
+      `> *Live Team Attendance & Roster (${workDate})*\n\n` +
+      '```yaml\n' +
+      `• Tổng nhân sự : ${teamData.length} người\n` +
+      `• Đang trong ca : ${activeWorkers.length} người (🟢 ONLINE)\n` +
+      `• Đang nghỉ ngơi: ${offWorkers.length} người (⚪ OFF)\n` +
+      `• Hạn chốt ca   : còn ${hoursLeftBeforeCutoff}h (06:00 AM)\n` +
+      '```'
     )
-    .setColor('#3498DB')
+    .setColor('#5865F2')
     .addFields(
       {
-        name: `🟢 ĐANG TRONG CA / 현재 근무 중 (${activeWorkers.length} người)`,
-        value: activeWorkers.length > 0 ? activeWorkers.join('\n') : '*Hiện không có ai đang trong ca.*'
+        name: `🟢 ĐANG TRONG CA (근무 중 - ${activeWorkers.length})`,
+        value: activeWorkers.length > 0 ? activeWorkers.join('\n') : '*Hiện cả đội đang nghỉ ngơi.*'
       },
       {
-        name: `⚪ ĐANG NGHỈ / 현재 휴식 중 (${offWorkers.length} người)`,
+        name: `⚪ ĐANG NGHỈ (휴식 중 - ${offWorkers.length})`,
         value: offWorkers.length > 0 ? offWorkers.join('\n') : '*Tất cả thành viên đều đang trong ca.*'
       }
     )
-    .setFooter({ text: 'Dành riêng cho Quản lý • AURA Management' })
+    .setFooter({ text: 'Gamefy Base Teams • Command Center' })
     .setTimestamp();
 
   return interaction.reply({

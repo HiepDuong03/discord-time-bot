@@ -2,7 +2,8 @@ import {
   ModalBuilder, 
   TextInputBuilder, 
   TextInputStyle, 
-  ActionRowBuilder 
+  ActionRowBuilder,
+  EmbedBuilder
 } from 'discord.js';
 import { 
   startShiftWithAccount, 
@@ -25,10 +26,10 @@ function formatMinutes(minutes) {
   return `${hours}h ${remainingMins}p (${decimalHours}h)`;
 }
 
-function createProgressBar(percent, length = 15) {
+function createProgressBar(percent, length = 12) {
   const filled = Math.min(length, Math.max(0, Math.round((percent / 100) * length)));
   const empty = length - filled;
-  return `[${'█'.repeat(filled)}${'░'.repeat(empty)}]`;
+  return `${'▰'.repeat(filled)}${'▱'.repeat(empty)}`;
 }
 
 /**
@@ -93,16 +94,25 @@ export async function handleButtonInteraction(interaction) {
     const accountTotalText = formatMinutes(result.accountTotalToday);
 
     const accountStatusText = result.isAccountAchieved
-      ? '✅ **Nick này ĐÃ ĐẠT chỉ tiêu 8h hôm nay! / 오늘 목표 8시간 달성 완료!**'
+      ? '✅ **Nick này ĐÃ ĐẠT chỉ tiêu 8h hôm nay! / 오늘 목표 8시간 달성!**'
       : `⏳ **Nick [${result.accountCode}] còn thiếu:** **${formatMinutes(Math.max(0, 480 - result.accountTotalToday))}** để đủ 8h SLA.`;
 
+    const embed = new EmbedBuilder()
+      .setTitle('🔴 KẾT THÚC CA LÀM VIỆC | 퇴근 완료')
+      .setDescription(
+        `> **Nick vừa cày:** \`[${result.accountCode}]\`  •  **Ca vừa rồi:** **${shiftDurationText}**\n\n` +
+        `👤 **Tổng giờ của bạn hôm nay:** \`${memberTotalText} / 8.0h\`\n` +
+        `🛡️ **Tổng giờ Nick [${result.accountCode}]:** \`${accountTotalText} / 8.0h\`\n` +
+        `└ ${accountStatusText}\n\n` +
+        `-# 💡 Đã mở khóa nick. Đồng đội tiếp theo có thể nhận ca!\n` +
+        `-# 🇰🇷 다음 작업자를 위해 계정 잠금이 해제되었습니다.`
+      )
+      .setColor('#ED4245')
+      .setFooter({ text: 'Gamefy Base Teams • Shift Completed' })
+      .setTimestamp();
+
     return interaction.reply({
-      content: `🔴 **KẾT THÚC CA LÀM VIỆC! / 퇴근 완료!**\n\n` +
-               `• **Nick vừa cày / 작업 계정:** \`[${result.accountCode}]\`\n` +
-               `• **Ca vừa rồi / 이번 근무:** **${shiftDurationText}**\n` +
-               `• **Tổng giờ của bạn hôm nay / 오늘 개인 총 근무:** **${memberTotalText}** / 8.0h\n` +
-               `• **Tổng giờ của Nick [${result.accountCode}] cả ngày:** **${accountTotalText}** / 8.0h\n` +
-               `└ ${accountStatusText}`,
+      embeds: [embed],
       ephemeral: true
     });
   }
@@ -122,17 +132,26 @@ export async function handleButtonInteraction(interaction) {
     const progressBar = createProgressBar(rawPercent);
 
     let currentShiftStatus = summary.hasActiveShift 
-      ? `🟢 **Đang trong ca / 근무 중** trên Nick \`[${summary.activeAccount}]\` (Đã cày: ${formatMinutes(summary.activeMinutes)})`
-      : `⚪ **Đang nghỉ / 휴식 중**`;
+      ? `🟢 **Đang trong ca** trên Nick \`[${summary.activeAccount}]\` (Đã cày: ${formatMinutes(summary.activeMinutes)})`
+      : `⚪ **Đang nghỉ ngơi**`;
+
+    const embed = new EmbedBuilder()
+      .setTitle('📊 TIẾN ĐỘ CÁ NHÂN HÔM NAY | 개인 근무 현황')
+      .setDescription(
+        `• **Trạng thái:** ${currentShiftStatus}\n` +
+        `• **Tiến độ:** \`${progressBar}\` **${displayPercent}%**\n\n` +
+        `⏱️ **Tổng giờ của bạn:** \`${totalText} / 8.0h\`\n` +
+        `⏳ **Còn thiếu:** \`${remainingText}\`\n` +
+        `⏰ **Hạn chốt ca:** còn \`${hoursLeftBeforeCutoff}h\` (trước 06:00 sáng mai)\n\n` +
+        `-# 💡 Dùng lệnh /acc-status để xem tiến độ của từng Nick Game.\n` +
+        `-# 🇰🇷 /acc-status 명령어로 계정별 현황을 확인할 수 있습니다.`
+      )
+      .setColor('#00D8F6')
+      .setFooter({ text: `Chu kỳ làm việc: ${summary.workDate}` })
+      .setTimestamp();
 
     return interaction.reply({
-      content: `📊 **TIẾN ĐỘ CỦA BẠN HÔM NAY / 오늘의 개인 근무 현황 (${summary.workDate})**\n\n` +
-               `• **Trạng thái / 상태:** ${currentShiftStatus}\n` +
-               `• **Tiến độ / 달성률:** ${progressBar} **${displayPercent}%**\n` +
-               `• **Tổng giờ cá nhân / 총 근무:** **${totalText}** / 8.0h\n` +
-               `• **Còn thiếu / 남은 시간:** **${remainingText}**\n` +
-               `• **Thời gian đến 06:00 sáng mai / 마감까지:** **${hoursLeftBeforeCutoff}h**\n\n` +
-               `*(Mẹo: Dùng lệnh \`/acc-status\` để xem tiến độ của từng Nick Game)*`,
+      embeds: [embed],
       ephemeral: true
     });
   }
@@ -177,20 +196,27 @@ export async function handleModalInteraction(interaction) {
   }
 
   const checkInTimeStr = result.checkInTime.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-  const noteStr = note ? `\n• **Ghi chú / 메모:** *${note}*` : '';
+  const noteStr = note ? `\n• **Ghi chú:** *${note}*` : '';
 
   // Lấy tiến độ hiện tại của Nick này trong ngày để báo cho member biết
   const accSummary = getAccountDailySummary(result.accountCode, result.workDate);
   const accDoneSoFar = formatMinutes(accSummary.completedMinutes);
 
+  const embed = new EmbedBuilder()
+    .setTitle('🟢 CHECK-IN THÀNH CÔNG | 출근 완료')
+    .setDescription(
+      `> Nhân sự: **${displayName}**  •  Giờ vào: **${checkInTimeStr}**\n\n` +
+      `🎮 **Nick Game (계정):** \`[${result.accountCode}]\`\n` +
+      `📊 **Tiến độ Nick hôm nay:** \`${accDoneSoFar} / 8.0h\`${noteStr}\n\n` +
+      `📸 **Lưu ý:** Chụp ảnh màn hình nhận nick gửi vào kênh này!\n` +
+      `-# 🇰🇷 교대 시 인증샷을 전송하고 퇴근 버튼을 꼭 눌러주세요.`
+    )
+    .setColor('#57F287')
+    .setFooter({ text: 'Gamefy Base Teams • Shift Started' })
+    .setTimestamp();
+
   return interaction.reply({
-    content: `🟢 **VÀO CA THÀNH CÔNG! / 출근 완료!**\n\n` +
-             `• **Nhân sự / 근무자:** **${displayName}**\n` +
-             `• **Nick đảm nhận / 담당 계정:** \`[${result.accountCode}]\`\n` +
-             `• **Giờ vào / 출근 시간:** **${checkInTimeStr}**\n` +
-             `• **Hôm nay Nick này đã được cày:** **${accDoneSoFar} / 8.0h**${noteStr}\n\n` +
-             `*Chúc bạn cày game hiệu quả! Khi nghỉ nhớ bấm nút "Hết ca" để mở khóa Nick cho anh em xoay ca tiếp theo nhé!*\n` +
-             `*교대 시 다음 사람을 위해 퇴근 버튼을 꼭 눌러주세요!*`,
+    embeds: [embed],
     ephemeral: true
   });
 }

@@ -42,23 +42,25 @@ export async function execute(interaction) {
     const leaderboardLines = teamData
       .sort((a, b) => b.totalMinutes - a.totalMinutes)
       .map((member, idx) => {
+        const rankPrefix = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `**${idx + 1}.**`;
         const timeStr = formatMinutes(member.totalMinutes);
         const icon = member.isAchieved ? '🟢' : member.totalMinutes >= 240 ? '🟡' : '🔴';
         const statusText = member.isAchieved 
-          ? 'ĐẠT / 달성' 
-          : `Thiếu ${formatMinutes(member.remainingMinutes)} / 남음`;
-        return `${idx + 1}. ${icon} **${member.displayName}**: ${timeStr} / 8.0h (${statusText})`;
+          ? '🌟 Đạt 8h' 
+          : `Thiếu ${formatMinutes(member.remainingMinutes)}`;
+        return `${rankPrefix} ${icon} **${member.displayName}** ➔ \`${timeStr} / 8.0h\` (${statusText})`;
       });
 
     const embed = new EmbedBuilder()
-      .setTitle(`📊 BÁO CÁO TIẾN ĐỘ / 일일 근무 현황 (${targetDate})`)
+      .setTitle(`📊 BÁO CÁO TIẾN ĐỘ TOÀN ĐỘI | 일일 근무 현황`)
       .setDescription(
-        `**Xếp hạng tiến độ toàn đội / 팀원별 근무 순위:**\n${leaderboardLines.join('\n')}\n\n` +
-        `*Đường kẻ đỏ: Mốc chỉ tiêu 8h / 붉은 점선: 일일 목표 8시간 기준선*`
+        `> **TIẾN ĐỘ CHỈ TIÊU & BIỂU ĐỒ NĂNG SUẤT (${targetDate})**\n\n` +
+        `🏆 **Bảng xếp hạng cày game hôm nay:**\n${leaderboardLines.join('\n')}\n\n` +
+        `-# 💡 Đường kẻ đỏ nét đứt: Mốc chỉ tiêu 8h/ngày | 붉은 점선: 일일 목표 8시간`
       )
-      .setColor('#2ECC71')
+      .setColor('#5865F2')
       .setImage(chartUrl)
-      .setFooter({ text: 'Chu kỳ chốt / 마감 기준: 익일 06:00 AM' })
+      .setFooter({ text: 'Gamefy Base Teams • Performance Analytics' })
       .setTimestamp();
 
     return interaction.editReply({ embeds: [embed] });

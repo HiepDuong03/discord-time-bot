@@ -41,52 +41,56 @@ export async function execute(interaction) {
 
     if (acc.hasActiveShift) {
       activeAccs.push(
-        `• 🟢 \`[${acc.accountCode}]\`: Đang được cày bởi **${acc.activeFarmerName}** (<@${acc.activeFarmerId}>)\n` +
-        `  └ Ca hiện tại: **${acc.activeMinutes} phút** | Tổng hôm nay: **${totalStr} / ${targetStr}**`
+        `• \`[${acc.accountCode}]\` ➔ **${acc.activeFarmerName}** (<@${acc.activeFarmerId}>)\n` +
+        `  └ Đang cày: **${acc.activeMinutes}p** | Tổng hôm nay: \`${totalStr} / ${targetStr}\``
       );
     } else if (acc.isAchieved) {
       achievedAccs.push(
-        `• ✅ \`[${acc.accountCode}]\`: **${totalStr} / ${targetStr}** (Đã đạt SLA 8h / 목표 달성)`
+        `• \`[${acc.accountCode}]\` ➔ \`${totalStr} / ${targetStr}\` (🌟 Đạt 100% SLA)`
       );
     } else {
       deficitAccs.push(
-        `• 🔴 \`[${acc.accountCode}]\`: Mới đạt **${totalStr} / ${targetStr}** (Còn thiếu **${neededStr}**)\n` +
-        `  └ ⚠️ *Trạng thái: Đang TRỐNG! Cần người vào cày bù / 현재 비어있음, 작업 필요*`
+        `• \`[${acc.accountCode}]\` ➔ Mới đạt \`${totalStr} / ${targetStr}\` (Thiếu **${neededStr}**)\n` +
+        `  └ ⚠️ *ĐANG TRỐNG! Cần người vào cày bù / 작업 필요*`
       );
     }
   }
 
   const embed = new EmbedBuilder()
-    .setTitle(`🎮 TIẾN ĐỘ TỪNG NICK GAME / 계정별 일일 작업 현황 (${workDate})`)
+    .setTitle(`🎮 TIẾN ĐỘ TỪNG NICK GAME | 계정별 작업 현황`)
     .setDescription(
-      `📌 **Mục tiêu mỗi Nick:** \`Tối thiểu 8.0h / ngày (일일 8시간)\`\n` +
-      `⏱️ **Thời gian đến mốc 06:00 sáng mai / 마감까지:** \`${hoursLeft} tiếng (시간)\`\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━`
+      `> **THEO DÕI CHỈ TIÊU & TIẾN ĐỘ TỪNG NICK CÀY**\n` +
+      `> *Account SLA & Rotation Monitoring (${workDate})*\n\n` +
+      '```yaml\n' +
+      `• Chỉ tiêu mỗi Nick : 8.0h / ngày (일일 8시간)\n` +
+      `• Hạn chốt ca       : còn ${hoursLeft}h (trước 06:00 sáng mai)\n` +
+      `• Tổng số Nick      : ${accList.length} acc đang quản lý\n` +
+      '```'
     )
-    .setColor('#F1C40F');
-
-  if (activeAccs.length > 0) {
-    embed.addFields({
-      name: `🟢 ĐANG CÓ NGƯỜI CÀY / 현재 작업 중 (${activeAccs.length} Nick)`,
-      value: activeAccs.join('\n')
-    });
-  }
+    .setColor('#FEE75C');
 
   if (deficitAccs.length > 0) {
     embed.addFields({
-      name: `🔴 CẦN CÀY BÙ (ĐANG TRỐNG) / 미달 및 작업 필요 (${deficitAccs.length} Nick)`,
+      name: `🔴 CẦN CÀY BÙ / ĐANG TRỐNG (작업 필요 - ${deficitAccs.length} Nick)`,
       value: deficitAccs.join('\n')
+    });
+  }
+
+  if (activeAccs.length > 0) {
+    embed.addFields({
+      name: `🟢 ĐANG CÓ NGƯỜI CÀY (진행 중 - ${activeAccs.length} Nick)`,
+      value: activeAccs.join('\n')
     });
   }
 
   if (achievedAccs.length > 0) {
     embed.addFields({
-      name: `✅ ĐÃ ĐẠT CHỈ TIÊU SLA / 8시간 목표 달성 (${achievedAccs.length} Nick)`,
+      name: `✅ ĐÃ ĐẠT CHỈ TIÊU SLA (달성 완료 - ${achievedAccs.length} Nick)`,
       value: achievedAccs.join('\n')
     });
   }
 
-  embed.setFooter({ text: 'AURA Account SLA Monitor • Chu kỳ chốt: 익일 06:00 AM' });
+  embed.setFooter({ text: 'Gamefy Base Teams • Chu kỳ chốt: 06:00 AM' });
   embed.setTimestamp();
 
   return interaction.reply({ embeds: [embed] });
