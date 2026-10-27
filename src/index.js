@@ -20,6 +20,7 @@ import * as teamStatusCommand from './commands/teamStatus.js';
 import * as checkUserCommand from './commands/checkUser.js';
 import * as accStatusCommand from './commands/accStatus.js';
 import * as forceCheckoutCommand from './commands/forceCheckout.js';
+import * as accManageCommand from './commands/accManage.js';
 
 console.log('====================================================');
 console.log('🤖 KHỞI ĐỘNG DISCORD BOT CHẤM CÔNG & QUẢN LÝ TEAM');
@@ -60,7 +61,8 @@ const commandList = [
   teamStatusCommand, 
   checkUserCommand,
   accStatusCommand,
-  forceCheckoutCommand
+  forceCheckoutCommand,
+  accManageCommand
 ];
 
 for (const cmd of commandList) {
@@ -119,6 +121,15 @@ client.once('ready', async () => {
 // Sự kiện bắt tương tác (Commands & Buttons)
 client.on('interactionCreate', async (interaction) => {
   try {
+    // 0. Xử lý Autocomplete gợi ý thông minh
+    if (interaction.isAutocomplete()) {
+      const command = client.commands.get(interaction.commandName);
+      if (command && typeof command.autocomplete === 'function') {
+        await command.autocomplete(interaction);
+      }
+      return;
+    }
+
     // 1. Xử lý nút bấm Chấm công
     if (interaction.isButton()) {
       await handleButtonInteraction(interaction);

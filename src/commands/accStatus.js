@@ -2,16 +2,11 @@ import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import { getAllAccountsTodaySummary, getWorkDate } from '../services/shiftService.js';
 import { getHoursUntilCutoff } from '../services/reminderService.js';
 
-function formatMinutes(minutes) {
-  const m = Math.max(0, Math.round(minutes));
-  const hours = Math.floor(m / 60);
-  const remainingMins = m % 60;
-  const decimalHours = (m / 60).toFixed(2);
-
-  if (hours === 0) {
-    return `${remainingMins}p (${decimalHours}h)`;
-  }
-  return `${hours}h ${remainingMins}p (${decimalHours}h)`;
+function createMiniBar(completedMinutes, targetHours = 8.0) {
+  const targetMinutes = targetHours * 60;
+  const ratio = Math.min(1, Math.max(0, completedMinutes / targetMinutes));
+  const filled = Math.round(ratio * 5);
+  return '▰'.repeat(filled) + '▱'.repeat(5 - filled);
 }
 
 export const data = new SlashCommandBuilder()
@@ -25,7 +20,7 @@ export async function buildAccountStatusEmbed(workDate = getWorkDate()) {
   if (accList.length === 0) {
     return {
       hasData: false,
-      message: `ℹ️ Chưa có Nick game nào được ghi nhận ca cày hôm nay (**${workDate}**).\n*(오늘 기록된 계정 작업 내역이 없습니다.)*`
+      message: `ℹ️ Chưa có Nick game nào trong danh mục hoạt động.\n👉 Quản lý hãy dùng lệnh \`/acc-manage add code:<mã_nick>\` để thêm Nick cho team!\n*(등록된 계정이 없습니다. /acc-manage add 명령어로 추가해주세요.)*`
     };
   }
 
@@ -34,23 +29,22 @@ export async function buildAccountStatusEmbed(workDate = getWorkDate()) {
   const achievedAccs = [];
 
   for (const acc of accList) {
-    const totalStr = formatMinutes(acc.totalMinutes);
-    const neededStr = formatMinutes(acc.remainingMinutes);
-    const targetStr = `${acc.targetHours}h`;
+    const doneH = (acc.totalMinutes / 60).toFixed(1);
+    const targetH = `${acc.targetHours.toFixed(1)}h`;
+    const remH = (acc.remainingMinutes / 60).toFixed(1);
+    const miniBar = createMiniBar(acc.totalMinutes, acc.targetHours);
 
     if (acc.hasActiveShift) {
       activeAccs.push(
-        `• \`[${acc.accountCode}]\` ➔ **${acc.activeFarmerName}** (<@${acc.activeFarmerId}>)\n` +
-        `  └ Đang cày: **${acc.activeMinutes}p** | Tổng hôm nay: \`${totalStr} / ${targetStr}\``
+        `• \`[${acc.accountCode}]\` \`${miniBar}\` **${doneH}/${targetH}** • 🟢 **${acc.activeFarmerName}** (${acc.activeMinutes}p)`
       );
     } else if (acc.isAchieved) {
       achievedAccs.push(
-        `• \`[${acc.accountCode}]\` ➔ \`${totalStr} / ${targetStr}\` (🌟 Đạt 100% SLA)`
+        `• \`[${acc.accountCode}]\` \`${miniBar}\` **${doneH}/${targetH}** • 🌟 Đạt SLA`
       );
     } else {
       deficitAccs.push(
-        `• \`[${acc.accountCode}]\` ➔ Mới đạt \`${totalStr} / ${targetStr}\` (Thiếu **${neededStr}**)\n` +
-        `  └ ⚠️ *ĐANG TRỐNG! Cần người vào cày bù / 작업 필요*`
+        `• \`[${acc.accountCode}]\` \`${miniBar}\` **${doneH}/${targetH}** • ⚪ Trống *(Thiếu ${remH}h)*`
       );
     }
   }
@@ -58,38 +52,34 @@ export async function buildAccountStatusEmbed(workDate = getWorkDate()) {
   const embed = new EmbedBuilder()
     .setTitle(`🎮 TIẾN ĐỘ TỪNG NICK GAME | 계정별 작업 현황`)
     .setDescription(
-      `> **THEO DÕI CHỈ TIÊU & TIẾN ĐỘ TỪNG NICK CÀY**\n` +
-      `> *Account SLA & Rotation Monitoring (${workDate})*\n\n` +
-      '```yaml\n' +
-      `• Chỉ tiêu mỗi Nick : 8.0h / ngày (일일 8시간)\n` +
-      `• Hạn chốt ca       : còn ${hoursLeft}h (trước 06:00 sáng mai)\n` +
-      `• Tổng số Nick      : ${accList.length} acc đang quản lý\n` +
-      '```'
+      `📅 **Chu kỳ:** \`${workDate}\`  •  ⏰ **Hạn chốt ca:** còn \`${hoursLeft}h\` (06:00 sáng)\n` +
+      `📊 **Tổng quan:** **${activeAccs.length}** Đang cày  |  **${deficitAccs.length}** Đang trống  |  **${achievedAccs.length}** Đạt SLA\n` +
+      `-# 🎯 Tiêu chuẩn: 8.0h/nick/ngày • 🇰🇷 일일 계정 목표 8.0시간`
     )
-    .setColor('#FEE75C');
-
-  if (deficitAccs.length > 0) {
-    embed.addFields({
-      name: `🔴 CẦN CÀY BÙ / ĐANG TRỐNG (작업 필요 - ${deficitAccs.length} Nick)`,
-      value: deficitAccs.join('\n')
-    });
-  }
+    .setColor('#5865F2');
 
   if (activeAccs.length > 0) {
     embed.addFields({
-      name: `🟢 ĐANG CÓ NGƯỜI CÀY (진행 중 - ${activeAccs.length} Nick)`,
+      name: `🟢 ĐANG CÓ NGƯỜI CÀY (${activeAccs.length} Nick / 진행 중)`,
       value: activeAccs.join('\n')
+    });
+  }
+
+  if (deficitAccs.length > 0) {
+    embed.addFields({
+      name: `⚪ ĐANG TRỐNG / CẦN CÀY (${deficitAccs.length} Nick / 대기 중)`,
+      value: deficitAccs.join('\n')
     });
   }
 
   if (achievedAccs.length > 0) {
     embed.addFields({
-      name: `✅ ĐÃ ĐẠT CHỈ TIÊU SLA (달성 완료 - ${achievedAccs.length} Nick)`,
+      name: `🌟 ĐÃ HOÀN THÀNH SLA (${achievedAccs.length} Nick / 달성 완료)`,
       value: achievedAccs.join('\n')
     });
   }
 
-  embed.setFooter({ text: 'Gamefy Base Teams • Chu kỳ chốt: 06:00 AM' });
+  embed.setFooter({ text: 'Gamefy Base Teams • Account SLA Monitor' });
   embed.setTimestamp();
 
   return {

@@ -1,62 +1,67 @@
 import { SlashCommandBuilder, PermissionFlagsBits, AttachmentBuilder, EmbedBuilder } from 'discord.js';
 import { exportTimesheetToExcel } from '../services/exportService.js';
 
-function formatDate(d) {
+function formatDateIso(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
 
-function resolveDateRange(range, customFrom, customTo) {
+/**
+ * Bộ phân tích ngày thông minh (Smart Date Parser)
+ * Chấp nhận: số ngày '1', '27'; ngày/tháng '15/9', '15-09'; chuẩn '2026-10-01'; chuỗi dính '20261001'
+ */
+export function smartParseDate(raw) {
+  if (!raw) return null;
+  const str = String(raw).trim();
   const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const pad = n => String(n).padStart(2, '0');
 
-  if (range === 'today') {
-    const today = formatDate(now);
-    return { fromDate: today, toDate: today };
-  }
-
-  if (range === 'this_week') {
-    const d = new Date(now);
-    const dayOfWeek = d.getDay(); // 0: CN, 1: T2...
-    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    d.setDate(d.getDate() + diffToMonday);
-    return {
-      fromDate: formatDate(d),
-      toDate: formatDate(now)
-    };
-  }
-
-  if (range === 'last_month') {
-    const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const lastDayLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
-    return {
-      fromDate: formatDate(firstDayLastMonth),
-      toDate: formatDate(lastDayLastMonth)
-    };
-  }
-
-  if (range === 'custom') {
-    if (!customFrom || !customTo) {
-      return {
-        error: '⚠️ Khi chọn "custom" (tự nhập ngày), bạn bắt buộc phải nhập cả 2 tham số `from` và `to` (Định dạng: `YYYY-MM-DD`).'
-      };
+  // 1. Nếu chỉ gõ 1-2 chữ số (ví dụ: '1', '15', '27') -> ngày trong tháng hiện tại
+  if (/^\d{1,2}$/.test(str)) {
+    const day = parseInt(str, 10);
+    if (day >= 1 && day <= 31) {
+      return `${y}-${pad(m + 1)}-${pad(day)}`;
     }
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(customFrom) || !dateRegex.test(customTo)) {
-      return {
-        error: '❌ Định dạng ngày không đúng! Vui lòng nhập theo dạng `YYYY-MM-DD` (Ví dụ: `2026-10-01`).'
-      };
-    }
-    return { fromDate: customFrom, toDate: customTo };
   }
 
-  // Mặc định 'this_month': Từ ngày 01 tháng này đến hôm nay
-  const firstDayThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  return {
-    fromDate: formatDate(firstDayThisMonth),
-    toDate: formatDate(now)
-  };
+  // 2. Nếu gõ dạng ngày/tháng hoặc ngày-tháng (ví dụ: '15/9', '15-09', '15/10')
+  const dmMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})$/);
+  if (dmMatch) {
+    const day = parseInt(dmMatch[1], 10);
+    const month = parseInt(dmMatch[2], 10);
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+      return `${y}-${pad(month)}-${pad(day)}`;
+    }
+  }
+
+  // 3. Chuỗi 8 số liền nhau (ví dụ: '20261001')
+  const digits = str.replace(/\D/g, '');
+  if (digits.length === 8 && (digits.startsWith('202') || digits.startsWith('203'))) {
+    return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+  }
+
+  // 4. Định dạng chuẩn YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    return str;
+  }
+
+  // 5. Nếu có lỗi nhảy phím lặp số đầu kiểu '2202610...'
+  if (str.length > 8) {
+    const yearMatch = str.match(/(202\d)/);
+    if (yearMatch) {
+      const yearIdx = str.indexOf(yearMatch[1]);
+      const cleanSub = str.slice(yearIdx).replace(/\D/g, '');
+      if (cleanSub.length >= 8) {
+        return `${cleanSub.slice(0, 4)}-${cleanSub.slice(4, 6)}-${cleanSub.slice(6, 8)}`;
+      }
+    }
+  }
+
+  return null;
 }
 
 export const data = new SlashCommandBuilder()
@@ -64,39 +69,177 @@ export const data = new SlashCommandBuilder()
   .setDescription('Xuất file Excel tổng hợp số giờ làm theo khoảng ngày để tính lương')
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
   .addStringOption(option =>
-    option.setName('range')
-      .setDescription('Khoảng thời gian nhanh / 빠른 기간 선택 (Mặc định: Tháng này)')
+    option.setName('khoang_thoi_gian')
+      .setDescription('Chọn nhanh khoảng thời gian định kỳ / 빠른 기간 선택')
       .setRequired(false)
       .addChoices(
-        { name: '📅 Tháng này / 이번 달 (Mặc định: Ngày 1 -> nay)', value: 'this_month' },
-        { name: '☀️ Hôm nay / 오늘', value: 'today' },
-        { name: '📆 Tuần này / 이번 주 (Thứ 2 -> nay)', value: 'this_week' },
+        { name: '📅 Tháng này / 이번 달 (Từ ngày 01 đến hôm nay)', value: 'this_month' },
         { name: '⏮️ Tháng trước / 지난 달 (Trọn vẹn tháng trước)', value: 'last_month' },
-        { name: '⚙️ Tự nhập ngày / 직접 입력 (Dùng tham số from & to)', value: 'custom' }
+        { name: '📆 Tuần này / 이번 주 (Từ Thứ 2 đến hôm nay)', value: 'this_week' },
+        { name: '🗓️ Tuần trước / 지난 주 (Trọn vẹn tuần trước)', value: 'last_week' },
+        { name: '⏳ 7 ngày gần nhất / 최근 7일', value: 'last_7_days' },
+        { name: '⏳ 30 ngày gần nhất / 최근 30일', value: 'last_30_days' },
+        { name: '☀️ Hôm nay / 오늘', value: 'today' }
       )
   )
   .addStringOption(option =>
     option.setName('from')
-      .setDescription('Ngày bắt đầu nếu chọn custom (YYYY-MM-DD, ví dụ: 2026-10-01)')
+      .setDescription('Từ ngày (Click gợi ý hoặc gõ số ngày: 1, 15, 2026-10-01)')
       .setRequired(false)
+      .setAutocomplete(true)
   )
   .addStringOption(option =>
     option.setName('to')
-      .setDescription('Ngày kết thúc nếu chọn custom (YYYY-MM-DD, ví dụ: 2026-10-15)')
+      .setDescription('Đến ngày (Click gợi ý hoặc gõ số ngày: 27, 2026-10-27)')
       .setRequired(false)
+      .setAutocomplete(true)
   );
 
+/**
+ * Xử lý gợi ý ngày tự động 1-chạm (Discord Autocomplete)
+ */
+export async function autocomplete(interaction) {
+  const focusedOption = interaction.options.getFocused(true);
+  const query = focusedOption.value.trim().toLowerCase();
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+
+  const pad = n => String(n).padStart(2, '0');
+  const formatIso = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
+
+  const suggestions = [];
+
+  if (focusedOption.name === 'from' || focusedOption.name === 'to') {
+    if (!query) {
+      const todayIso = formatIso(currentYear, currentMonth, now.getDate());
+      const firstDayThisMonth = formatIso(currentYear, currentMonth, 1);
+
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayIso = formatIso(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate());
+
+      const sevenDaysAgo = new Date(now);
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      const sevenDaysAgoIso = formatIso(sevenDaysAgo.getFullYear(), sevenDaysAgo.getMonth(), sevenDaysAgo.getDate());
+
+      const firstDayLastMonth = formatIso(currentYear, currentMonth - 1, 1);
+      const lastDayLastMonthObj = new Date(currentYear, currentMonth, 0);
+      const lastDayLastMonth = formatIso(lastDayLastMonthObj.getFullYear(), lastDayLastMonthObj.getMonth(), lastDayLastMonthObj.getDate());
+
+      suggestions.push(
+        { name: `📅 Hôm nay (${todayIso})`, value: todayIso },
+        { name: `📅 Đầu tháng này (${firstDayThisMonth})`, value: firstDayThisMonth },
+        { name: `⏮️ Hôm qua (${yesterdayIso})`, value: yesterdayIso },
+        { name: `⏮️ 7 ngày trước (${sevenDaysAgoIso})`, value: sevenDaysAgoIso },
+        { name: `🗓️ Đầu tháng trước (${firstDayLastMonth})`, value: firstDayLastMonth },
+        { name: `🗓️ Cuối tháng trước (${lastDayLastMonth})`, value: lastDayLastMonth }
+      );
+    } else {
+      const num = parseInt(query, 10);
+      if (!isNaN(num) && num >= 1 && num <= 31) {
+        const thisMonthDate = formatIso(currentYear, currentMonth, num);
+        suggestions.push({
+          name: `📅 Ngày ${num} tháng này (${thisMonthDate})`,
+          value: thisMonthDate
+        });
+
+        const lastMonthDate = formatIso(currentYear, currentMonth - 1, num);
+        suggestions.push({
+          name: `🗓️ Ngày ${num} tháng trước (${lastMonthDate})`,
+          value: lastMonthDate
+        });
+      }
+
+      if (query.length >= 4) {
+        const cleanDigits = query.replace(/\D/g, '');
+        if (cleanDigits.length === 8) {
+          const formatted = `${cleanDigits.slice(0, 4)}-${cleanDigits.slice(4, 6)}-${cleanDigits.slice(6, 8)}`;
+          suggestions.push({ name: `📅 Chọn ngày: ${formatted}`, value: formatted });
+        }
+      }
+    }
+  }
+
+  await interaction.respond(suggestions.slice(0, 25)).catch(() => {});
+}
+
 export async function execute(interaction) {
-  const range = interaction.options.getString('range') || 'this_month';
+  const preset = interaction.options.getString('khoang_thoi_gian');
   const rawFrom = interaction.options.getString('from')?.trim();
   const rawTo = interaction.options.getString('to')?.trim();
 
-  // Nếu người dùng không chọn range nhưng lại nhập from & to -> tự động coi như custom
-  const effectiveRange = (rawFrom && rawTo && !interaction.options.getString('range')) ? 'custom' : range;
+  let fromDate = null;
+  let toDate = null;
+  const now = new Date();
 
-  const { fromDate, toDate, error } = resolveDateRange(effectiveRange, rawFrom, rawTo);
-  if (error) {
-    return interaction.reply({ content: error, ephemeral: true });
+  // 1. Ưu tiên Preset nếu có chọn
+  if (preset) {
+    if (preset === 'today') {
+      const t = formatDateIso(now);
+      fromDate = t;
+      toDate = t;
+    } else if (preset === 'this_week') {
+      const d = new Date(now);
+      const day = d.getDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      d.setDate(d.getDate() + diff);
+      fromDate = formatDateIso(d);
+      toDate = formatDateIso(now);
+    } else if (preset === 'last_week') {
+      const d = new Date(now);
+      const day = d.getDay();
+      const diffToThisMon = day === 0 ? -6 : 1 - day;
+      const lastMon = new Date(now);
+      lastMon.setDate(now.getDate() + diffToThisMon - 7);
+      const lastSun = new Date(now);
+      lastSun.setDate(now.getDate() + diffToThisMon - 1);
+      fromDate = formatDateIso(lastMon);
+      toDate = formatDateIso(lastSun);
+    } else if (preset === 'last_month') {
+      const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const last = new Date(now.getFullYear(), now.getMonth(), 0);
+      fromDate = formatDateIso(first);
+      toDate = formatDateIso(last);
+    } else if (preset === 'last_7_days') {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 7);
+      fromDate = formatDateIso(d);
+      toDate = formatDateIso(now);
+    } else if (preset === 'last_30_days') {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 30);
+      fromDate = formatDateIso(d);
+      toDate = formatDateIso(now);
+    } else {
+      // this_month
+      const first = new Date(now.getFullYear(), now.getMonth(), 1);
+      fromDate = formatDateIso(first);
+      toDate = formatDateIso(now);
+    }
+  } else if (rawFrom || rawTo) {
+    // 2. Người dùng nhập from / to tự do
+    fromDate = smartParseDate(rawFrom);
+    toDate = smartParseDate(rawTo) || formatDateIso(now);
+
+    if (!fromDate) {
+      return interaction.reply({
+        content: `❌ Giá trị "Từ ngày" (\`${rawFrom}\`) không hợp lệ!\n👉 Bạn có thể gõ số ngày đơn giản (ví dụ: \`1\`, \`15\`) hoặc click chọn gợi ý.`,
+        ephemeral: true
+      });
+    }
+
+    if (fromDate > toDate) {
+      // Đảo lại nếu nhập ngược
+      const temp = fromDate;
+      fromDate = toDate;
+      toDate = temp;
+    }
+  } else {
+    // 3. Mặc định: Từ ngày 01 tháng này đến hôm nay
+    const first = new Date(now.getFullYear(), now.getMonth(), 1);
+    fromDate = formatDateIso(first);
+    toDate = formatDateIso(now);
   }
 
   await interaction.deferReply({ ephemeral: false });
@@ -140,7 +283,7 @@ export async function execute(interaction) {
 
     if (summary.deficits && summary.deficits.length > 0) {
       const lines = summary.deficits.slice(0, 5).map(item => {
-        const datePart = item.date.slice(5); // MM-DD
+        const datePart = item.date.slice(5);
         return `• \`${datePart}\` · **${item.nick}** · ${item.staff} ➔ **${item.hours.toFixed(1)}h**`;
       });
       const more = summary.deficits.length - 5;

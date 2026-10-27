@@ -194,8 +194,18 @@ export async function exportTimesheetToExcel(fromDate, toDate, slaHours = 8) {
       row.getCell(6).value = s.checkOutDate;
     }
     // Thời lượng tính bằng công thức, ca đang chạy để trống
-    row.getCell(7).value = { formula: `IF(F${r}="","",ROUND((F${r}-E${r})*24,2))` };
-    row.getCell(8).value = { formula: `IF(F${r}="","Đang chạy 진행 중","Hoàn tất 완료")` };
+    const durationHours = s.checkOutDate
+      ? Number(((s.checkOutDate.getTime() - s.checkInDate.getTime()) / (1000 * 3600)).toFixed(2))
+      : null;
+    const statusStr = s.checkOutDate ? "Hoàn tất 완료" : "Đang chạy 진행 중";
+
+    row.getCell(7).value = durationHours !== null
+      ? { formula: `IF(F${r}="","",ROUND((F${r}-E${r})*24,2))`, result: durationHours }
+      : "";
+    row.getCell(8).value = { 
+      formula: `IF(F${r}="","Đang chạy 진행 중","Hoàn tất 완료")`, 
+      result: statusStr 
+    };
     row.getCell(9).value = s.note;
 
     bodyRow(det, r, 9, i % 2 === 1, {
@@ -236,17 +246,38 @@ export async function exportTimesheetToExcel(fromDate, toDate, slaHours = 8) {
   dayKeys.forEach((k, i) => {
     const r = i + 2;
     const row = day.getRow(r);
+
+    const matchShifts = shifts.filter(s => s.work_date === k.dateStr && s.staff === k.staff && s.nick === k.nick);
+    const countShifts = matchShifts.length;
+    let dayTotalH = 0;
+    matchShifts.forEach(s => {
+      if (s.checkOutDate) {
+        dayTotalH += (s.checkOutDate.getTime() - s.checkInDate.getTime()) / (1000 * 3600);
+      }
+    });
+    dayTotalH = Number(dayTotalH.toFixed(2));
+    const isDayAchieved = dayTotalH >= slaHours;
+    const dayResultStr = isDayAchieved ? "Đạt 달성" : "Thiếu 미달";
+
     row.getCell(1).value = k.dateObj;
     row.getCell(2).value = k.staff;
     row.getCell(3).value = k.nick;
     row.getCell(4).value = {
-      formula: `COUNTIFS(${Q_DET}!$B$2:$B$${lastDetRow},A${r},${Q_DET}!$C$2:$C$${lastDetRow},B${r},${Q_DET}!$D$2:$D$${lastDetRow},C${r})`
+      formula: `COUNTIFS(${Q_DET}!$B$2:$B$${lastDetRow},A${r},${Q_DET}!$C$2:$C$${lastDetRow},B${r},${Q_DET}!$D$2:$D$${lastDetRow},C${r})`,
+      result: countShifts
     };
     row.getCell(5).value = {
-      formula: `SUMIFS(${Q_DET}!$G$2:$G$${lastDetRow},${Q_DET}!$B$2:$B$${lastDetRow},A${r},${Q_DET}!$C$2:$C$${lastDetRow},B${r},${Q_DET}!$D$2:$D$${lastDetRow},C${r})`
+      formula: `SUMIFS(${Q_DET}!$G$2:$G$${lastDetRow},${Q_DET}!$B$2:$B$${lastDetRow},A${r},${Q_DET}!$C$2:$C$${lastDetRow},B${r},${Q_DET}!$D$2:$D$${lastDetRow},C${r})`,
+      result: dayTotalH
     };
-    row.getCell(6).value = { formula: `${Q_OV}!$C$3` };
-    row.getCell(7).value = { formula: `IF(E${r}>=F${r},"Đạt 달성","Thiếu 미달")` };
+    row.getCell(6).value = { 
+      formula: `${Q_OV}!$C$3`, 
+      result: slaHours 
+    };
+    row.getCell(7).value = { 
+      formula: `IF(E${r}>=F${r},"Đạt 달성","Thiếu 미달")`, 
+      result: dayResultStr 
+    };
 
     bodyRow(day, r, 7, i % 2 === 1, {
       1: 'yyyy-mm-dd',
@@ -313,17 +344,17 @@ export async function exportTimesheetToExcel(fromDate, toDate, slaHours = 8) {
   ov.getRow(6).height = 34;
 
   const kpis = [
-    { col: 'B', label: 'Tổng giờ làm\n총 근무 시간', formula: `SUM(${Q_DET}!$G$2:$G$${lastDetRow})`, fmt: '0.0" h"' },
-    { col: 'C', label: 'Nhân sự\n근무자', formula: `COUNTA(B${r_staff0}:B${r_staff_tot - 1})`, fmt: '0' },
-    { col: 'D', label: 'Nick game\n계정', formula: `COUNTA(B${r_nick0}:B${r_nick_tot - 1})`, fmt: '0' },
-    { col: 'E', label: 'Tỉ lệ đạt SLA\n달성률', formula: `IF(COUNT(${Q_DAY}!$E$2:$E$${lastDayRow})=0,0,COUNTIFS(${Q_DAY}!$E$2:$E$${lastDayRow},">="&$C$3)/COUNT(${Q_DAY}!$E$2:$E$${lastDayRow}))`, fmt: '0.0%' }
+    { col: 'B', label: 'Tổng giờ làm\n총 근무 시간', formula: `SUM(${Q_DET}!$G$2:$G$${lastDetRow})`, result: summary.totalHours, fmt: '0.0" h"' },
+    { col: 'C', label: 'Nhân sự\n근무자', formula: `COUNTA(B${r_staff0}:B${r_staff_tot - 1})`, result: staffList.length, fmt: '0' },
+    { col: 'D', label: 'Nick game\n계정', formula: `COUNTA(B${r_nick0}:B${r_nick_tot - 1})`, result: nickList.length, fmt: '0' },
+    { col: 'E', label: 'Tỉ lệ đạt SLA\n달성률', formula: `IF(COUNT(${Q_DAY}!$E$2:$E$${lastDayRow})=0,0,COUNTIFS(${Q_DAY}!$E$2:$E$${lastDayRow},">="&$C$3)/COUNT(${Q_DAY}!$E$2:$E$${lastDayRow}))`, result: summary.slaRate, fmt: '0.0%' }
   ];
 
-  kpis.forEach(({ col, label, formula, fmt }) => {
+  kpis.forEach(({ col, label, formula, result, fmt }) => {
     const lblCell = ov.getCell(`${col}5`);
     const valCell = ov.getCell(`${col}6`);
     lblCell.value = label;
-    valCell.value = { formula };
+    valCell.value = { formula, result };
     lblCell.font = f(false, 9, MUTED);
     valCell.font = f(true, 18, NAVY);
     lblCell.alignment = { horizontal: 'left', vertical: 'bottom', wrapText: true };
@@ -347,6 +378,11 @@ export async function exportTimesheetToExcel(fromDate, toDate, slaHours = 8) {
     "Số ngày làm\n출근 일수", "Ngày đạt\n달성", "Ngày thiếu\n미달", "Tỉ lệ đạt\n달성률"
   ]);
 
+  let sumStaffHours = 0;
+  let sumStaffDays = 0;
+  let sumStaffPassed = 0;
+  let sumStaffDeficits = 0;
+
   if (staffList.length === 0) {
     const row = ov.getRow(r_staff0);
     row.getCell(2).value = 'Chưa có dữ liệu';
@@ -355,14 +391,53 @@ export async function exportTimesheetToExcel(fromDate, toDate, slaHours = 8) {
     staffList.forEach((st, i) => {
       const r = r_staff0 + i;
       const row = ov.getRow(r);
+
+      const stDayKeys = dayKeys.filter(k => k.staff === st.name);
+      let stHours = 0;
+      let stPassed = 0;
+      stDayKeys.forEach(k => {
+        const matchShifts = shifts.filter(s => s.work_date === k.dateStr && s.staff === k.staff && s.nick === k.nick);
+        let dH = 0;
+        matchShifts.forEach(s => {
+          if (s.checkOutDate) dH += (s.checkOutDate.getTime() - s.checkInDate.getTime()) / 3600000;
+        });
+        dH = Number(dH.toFixed(2));
+        stHours += dH;
+        if (dH >= slaHours) stPassed++;
+      });
+      stHours = Number(stHours.toFixed(2));
+      const stDays = stDayKeys.length;
+      const stDeficit = stDays - stPassed;
+      const stRate = stDays > 0 ? (stPassed / stDays) : 0;
+
+      sumStaffHours += stHours;
+      sumStaffDays += stDays;
+      sumStaffPassed += stPassed;
+      sumStaffDeficits += stDeficit;
+
       row.getCell(1).value = i + 1;
       row.getCell(2).value = st.name;
       row.getCell(3).value = String(st.did || '');
-      row.getCell(4).value = { formula: `SUMIFS(${Q_DET}!$G$2:$G$${lastDetRow},${Q_DET}!$C$2:$C$${lastDetRow},B${r})` };
-      row.getCell(5).value = { formula: `COUNTIFS(${Q_DAY}!$B$2:$B$${lastDayRow},B${r})` };
-      row.getCell(6).value = { formula: `COUNTIFS(${Q_DAY}!$B$2:$B$${lastDayRow},B${r},${Q_DAY}!$E$2:$E$${lastDayRow},">="&$C$3)` };
-      row.getCell(7).value = { formula: `E${r}-F${r}` };
-      row.getCell(8).value = { formula: `IF(E${r}=0,0,F${r}/E${r})` };
+      row.getCell(4).value = { 
+        formula: `SUMIFS(${Q_DET}!$G$2:$G$${lastDetRow},${Q_DET}!$C$2:$C$${lastDetRow},B${r})`,
+        result: stHours
+      };
+      row.getCell(5).value = { 
+        formula: `COUNTIFS(${Q_DAY}!$B$2:$B$${lastDayRow},B${r})`,
+        result: stDays
+      };
+      row.getCell(6).value = { 
+        formula: `COUNTIFS(${Q_DAY}!$B$2:$B$${lastDayRow},B${r},${Q_DAY}!$E$2:$E$${lastDayRow},">="&$C$3)`,
+        result: stPassed
+      };
+      row.getCell(7).value = { 
+        formula: `E${r}-F${r}`,
+        result: stDeficit
+      };
+      row.getCell(8).value = { 
+        formula: `IF(E${r}=0,0,F${r}/E${r})`,
+        result: stRate
+      };
 
       bodyRow(ov, r, 8, i % 2 === 1, {
         4: '0.00',
@@ -380,12 +455,14 @@ export async function exportTimesheetToExcel(fromDate, toDate, slaHours = 8) {
 
   const tStaff = r_staff_tot;
   const rowStaffTot = ov.getRow(tStaff);
+  const totStaffRate = sumStaffDays > 0 ? (sumStaffPassed / sumStaffDays) : 0;
+
   rowStaffTot.getCell(2).value = 'Tổng cộng 합계';
-  rowStaffTot.getCell(4).value = { formula: `SUM(D${r_staff0}:D${tStaff - 1})` };
-  rowStaffTot.getCell(5).value = { formula: `SUM(E${r_staff0}:E${tStaff - 1})` };
-  rowStaffTot.getCell(6).value = { formula: `SUM(F${r_staff0}:F${tStaff - 1})` };
-  rowStaffTot.getCell(7).value = { formula: `SUM(G${r_staff0}:G${tStaff - 1})` };
-  rowStaffTot.getCell(8).value = { formula: `IF(E${tStaff}=0,0,F${tStaff}/E${tStaff})` };
+  rowStaffTot.getCell(4).value = { formula: `SUM(D${r_staff0}:D${tStaff - 1})`, result: Number(sumStaffHours.toFixed(2)) };
+  rowStaffTot.getCell(5).value = { formula: `SUM(E${r_staff0}:E${tStaff - 1})`, result: sumStaffDays };
+  rowStaffTot.getCell(6).value = { formula: `SUM(F${r_staff0}:F${tStaff - 1})`, result: sumStaffPassed };
+  rowStaffTot.getCell(7).value = { formula: `SUM(G${r_staff0}:G${tStaff - 1})`, result: sumStaffDeficits };
+  rowStaffTot.getCell(8).value = { formula: `IF(E${tStaff}=0,0,F${tStaff}/E${tStaff})`, result: totStaffRate };
   totalRow(ov, tStaff, 8);
   rowStaffTot.getCell(4).numFmt = '0.00';
   rowStaffTot.getCell(8).numFmt = '0%';
@@ -400,6 +477,12 @@ export async function exportTimesheetToExcel(fromDate, toDate, slaHours = 8) {
     "Số ngày cày\n작업 일수", "Ngày đạt\n달성", "Ngày thiếu\n미달", "Tỉ lệ đạt SLA\n달성률"
   ]);
 
+  let sumNickShifts = 0;
+  let sumNickHours = 0;
+  let sumNickDays = 0;
+  let sumNickPassed = 0;
+  let sumNickDeficits = 0;
+
   if (nickList.length === 0) {
     const row = ov.getRow(r_nick0);
     row.getCell(2).value = 'Chưa có dữ liệu';
@@ -408,14 +491,59 @@ export async function exportTimesheetToExcel(fromDate, toDate, slaHours = 8) {
     nickList.forEach((nick, i) => {
       const r = r_nick0 + i;
       const row = ov.getRow(r);
+
+      const nickShifts = shifts.filter(s => s.nick === nick);
+      const countNickShifts = nickShifts.length;
+      const nickDayKeys = dayKeys.filter(k => k.nick === nick);
+      let nickHours = 0;
+      let nickPassed = 0;
+      nickDayKeys.forEach(k => {
+        const matchShifts = shifts.filter(s => s.work_date === k.dateStr && s.staff === k.staff && s.nick === k.nick);
+        let dH = 0;
+        matchShifts.forEach(s => {
+          if (s.checkOutDate) dH += (s.checkOutDate.getTime() - s.checkInDate.getTime()) / 3600000;
+        });
+        dH = Number(dH.toFixed(2));
+        nickHours += dH;
+        if (dH >= slaHours) nickPassed++;
+      });
+      nickHours = Number(nickHours.toFixed(2));
+      const nickDays = nickDayKeys.length;
+      const nickDeficit = nickDays - nickPassed;
+      const nickRate = nickDays > 0 ? (nickPassed / nickDays) : 0;
+
+      sumNickShifts += countNickShifts;
+      sumNickHours += nickHours;
+      sumNickDays += nickDays;
+      sumNickPassed += nickPassed;
+      sumNickDeficits += nickDeficit;
+
       row.getCell(1).value = i + 1;
       row.getCell(2).value = nick;
-      row.getCell(3).value = { formula: `COUNTIFS(${Q_DET}!$D$2:$D$${lastDetRow},B${r})` };
-      row.getCell(4).value = { formula: `SUMIFS(${Q_DET}!$G$2:$G$${lastDetRow},${Q_DET}!$D$2:$D$${lastDetRow},B${r})` };
-      row.getCell(5).value = { formula: `COUNTIFS(${Q_DAY}!$C$2:$C$${lastDayRow},B${r})` };
-      row.getCell(6).value = { formula: `COUNTIFS(${Q_DAY}!$C$2:$C$${lastDayRow},B${r},${Q_DAY}!$E$2:$E$${lastDayRow},">="&$C$3)` };
-      row.getCell(7).value = { formula: `E${r}-F${r}` };
-      row.getCell(8).value = { formula: `IF(E${r}=0,0,F${r}/E${r})` };
+      row.getCell(3).value = { 
+        formula: `COUNTIFS(${Q_DET}!$D$2:$D$${lastDetRow},B${r})`,
+        result: countNickShifts
+      };
+      row.getCell(4).value = { 
+        formula: `SUMIFS(${Q_DET}!$G$2:$G$${lastDetRow},${Q_DET}!$D$2:$D$${lastDetRow},B${r})`,
+        result: nickHours
+      };
+      row.getCell(5).value = { 
+        formula: `COUNTIFS(${Q_DAY}!$C$2:$C$${lastDayRow},B${r})`,
+        result: nickDays
+      };
+      row.getCell(6).value = { 
+        formula: `COUNTIFS(${Q_DAY}!$C$2:$C$${lastDayRow},B${r},${Q_DAY}!$E$2:$E$${lastDayRow},">="&$C$3)`,
+        result: nickPassed
+      };
+      row.getCell(7).value = { 
+        formula: `E${r}-F${r}`,
+        result: nickDeficit
+      };
+      row.getCell(8).value = { 
+        formula: `IF(E${r}=0,0,F${r}/E${r})`,
+        result: nickRate
+      };
 
       bodyRow(ov, r, 8, i % 2 === 1, {
         4: '0.00',
@@ -434,13 +562,15 @@ export async function exportTimesheetToExcel(fromDate, toDate, slaHours = 8) {
 
   const tNick = r_nick_tot;
   const rowNickTot = ov.getRow(tNick);
+  const totNickRate = sumNickDays > 0 ? (sumNickPassed / sumNickDays) : 0;
+
   rowNickTot.getCell(2).value = 'Tổng cộng 합계';
-  rowNickTot.getCell(3).value = { formula: `SUM(C${r_nick0}:C${tNick - 1})` };
-  rowNickTot.getCell(4).value = { formula: `SUM(D${r_nick0}:D${tNick - 1})` };
-  rowNickTot.getCell(5).value = { formula: `SUM(E${r_nick0}:E${tNick - 1})` };
-  rowNickTot.getCell(6).value = { formula: `SUM(F${r_nick0}:F${tNick - 1})` };
-  rowNickTot.getCell(7).value = { formula: `SUM(G${r_nick0}:G${tNick - 1})` };
-  rowNickTot.getCell(8).value = { formula: `IF(E${tNick}=0,0,F${tNick}/E${tNick})` };
+  rowNickTot.getCell(3).value = { formula: `SUM(C${r_nick0}:C${tNick - 1})`, result: sumNickShifts };
+  rowNickTot.getCell(4).value = { formula: `SUM(D${r_nick0}:D${tNick - 1})`, result: Number(sumNickHours.toFixed(2)) };
+  rowNickTot.getCell(5).value = { formula: `SUM(E${r_nick0}:E${tNick - 1})`, result: sumNickDays };
+  rowNickTot.getCell(6).value = { formula: `SUM(F${r_nick0}:F${tNick - 1})`, result: sumNickPassed };
+  rowNickTot.getCell(7).value = { formula: `SUM(G${r_nick0}:G${tNick - 1})`, result: sumNickDeficits };
+  rowNickTot.getCell(8).value = { formula: `IF(E${tNick}=0,0,F${tNick}/E${tNick})`, result: totNickRate };
   totalRow(ov, tNick, 8);
   rowNickTot.getCell(4).numFmt = '0.00';
   rowNickTot.getCell(8).numFmt = '0%';

@@ -78,8 +78,23 @@ export async function handleButtonInteraction(interaction) {
   const { customId, user, member } = interaction;
   const displayName = member?.displayName || user.username;
 
-  // 1. NÚT VÀO CA (Kiểm tra và mở danh sách Nick Game bằng Select Menu)
+  // 1. NÚT VÀO CA (Kiểm tra Role Member và mở danh sách Nick Game bằng Select Menu)
   if (customId === 'btn_checkin') {
+    // Kiểm tra quyền theo Role Member
+    if (config.targetWorkerRoleId && member) {
+      const hasWorkerRole = member.roles?.cache?.has(config.targetWorkerRoleId);
+      const isManager = member.permissions?.has('ManageGuild') || member.permissions?.has('Administrator');
+      if (!hasWorkerRole && !isManager) {
+        return interaction.reply({
+          content: `⛔ **Chưa có quyền vào ca / 권한 없음:**\n` +
+                   `Bạn cần có role **Member** (Nhân viên cày game) để sử dụng hệ thống chấm công!\n` +
+                   `Vui lòng liên hệ Quản lý để được cấp role trước khi vào ca.\n` +
+                   `-# 🇰🇷 작업 진행을 위해 관리자에게 Member 역할을 요청하세요.`,
+          ephemeral: true
+        });
+      }
+    }
+
     const activeShift = await getActiveShift(user.id);
     if (activeShift) {
       return interaction.reply({
@@ -93,18 +108,22 @@ export async function handleButtonInteraction(interaction) {
 
     const accList = await getAllAccountsTodaySummary();
 
-    // Nếu chưa có nick nào trong hệ thống, mở Modal để nhập nick đầu tiên
+    // Nếu chưa có nick nào trong danh mục chính thức, nhắc Quản lý thêm nick
     if (accList.length === 0) {
-      const modal = buildCheckinModal();
-      return interaction.showModal(modal);
+      return interaction.reply({
+        content: `ℹ️ Chưa có Nick game nào trong danh mục hoạt động.\n` +
+                 `👉 Quản lý vui lòng dùng lệnh \`/acc-manage add code:<mã_nick>\` để thêm Nick trước khi nhân viên vào ca!\n` +
+                 `-# 🇰🇷 등록된 계정이 없습니다. 관리자에게 계정 등록(/acc-manage add)을 요청하세요.`,
+        ephemeral: true
+      });
     }
 
     const selectMenu = new StringSelectMenuBuilder()
       .setCustomId('select_checkin_account')
       .setPlaceholder('🎮 Chọn Nick game bạn muốn cày / 계정을 선택하세요...');
 
-    // Lấy tối đa 24 nick để dành 1 chỗ cho tùy chọn "Nhập nick mới" (Discord giới hạn 25)
-    const displayList = accList.slice(0, 24);
+    // Lấy tối đa 25 nick chính thức đang hoạt động
+    const displayList = accList.slice(0, 25);
     const options = [];
 
     for (const acc of displayList) {
@@ -114,7 +133,7 @@ export async function handleButtonInteraction(interaction) {
           new StringSelectMenuOptionBuilder()
             .setLabel(`Nick [${acc.accountCode}] (${totalH}h / 8.0h)`)
             .setValue(`acc:${acc.accountCode}`)
-            .setDescription(`🔴 Có người cày: ${acc.activeFarmerName.slice(0, 20)} (${acc.activeMinutes}p)`)
+            .setDescription(`🔴 Có người cày: ${acc.activeFarmerName.slice(0, 20)} (${acc.activeMinutes}p) - Bàn giao`)
             .setEmoji('🔴')
         );
       } else if (acc.isAchieved) {
@@ -137,14 +156,6 @@ export async function handleButtonInteraction(interaction) {
       }
     }
 
-    options.push(
-      new StringSelectMenuOptionBuilder()
-        .setLabel('➕ Nhập Nick Mới Khác... / 새 계정 직접 입력')
-        .setValue('__NEW_ACCOUNT__')
-        .setDescription('Mở form nhập mã Nick chưa có trong danh sách')
-        .setEmoji('📝')
-    );
-
     selectMenu.addOptions(options);
 
     const row = new ActionRowBuilder().addComponents(selectMenu);
@@ -154,8 +165,7 @@ export async function handleButtonInteraction(interaction) {
       .setDescription(
         `> Vui lòng chọn tài khoản từ danh sách bên dưới:\n\n` +
         `• 🟢 **Nick Đang Trống:** Chọn để nhận ca và bắt đầu tính giờ ngay.\n` +
-        `• 🔴 **Nick Đang Cày:** Chọn để **Nhận Bàn Giao Ca** nếu đồng đội quên chốt ca.\n` +
-        `• 📝 **Nhập Nick Mới:** Nếu nick của bạn chưa xuất hiện trong danh sách.\n\n` +
+        `• 🔴 **Nick Đang Cày:** Chọn để **Nhận Bàn Giao Ca** nếu đồng đội quên chốt ca.\n\n` +
         `-# 🇰🇷 아래 메뉴에서 작업할 계정을 선택하세요 (작업 중인 계정은 교대 가능).`
       )
       .setColor('#57F287');

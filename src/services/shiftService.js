@@ -328,14 +328,12 @@ export async function getAccountDailySummary(accountCode, workDate = getWorkDate
 }
 
 /**
- * Lấy danh sách toàn bộ các Nick Game và tiến độ ngày hôm nay
+ * Lấy danh sách toàn bộ các Nick Game và tiến độ ngày hôm nay (Chỉ lấy Nick đang kích hoạt)
  */
 export async function getAllAccountsTodaySummary(workDate = getWorkDate()) {
   const accountsRes = await db.execute({
-    sql: `SELECT DISTINCT account_code FROM accounts
-          UNION
-          SELECT DISTINCT account_code FROM shifts WHERE work_date = ?`,
-    args: [workDate]
+    sql: `SELECT DISTINCT account_code FROM accounts WHERE is_active = 1`,
+    args: []
   });
 
   const accounts = [];
@@ -350,6 +348,63 @@ export async function getAllAccountsTodaySummary(workDate = getWorkDate()) {
     if (!a.hasActiveShift && b.hasActiveShift) return 1;
     return b.totalMinutes - a.totalMinutes;
   });
+}
+
+/**
+ * Thêm hoặc kích hoạt lại một Nick game chính thức vào danh mục
+ */
+export async function addOfficialAccount(accountCode, targetHours = 8.0) {
+  const cleanCode = normalizeAccountCode(accountCode);
+  if (!cleanCode || cleanCode.length < 2) {
+    return { success: false, message: 'Mã Nick game không hợp lệ (tối thiểu 2 ký tự).' };
+  }
+
+  await db.execute({
+    sql: `INSERT INTO accounts (account_code, daily_target_hours, is_active)
+          VALUES (?, ?, 1)
+          ON CONFLICT(account_code) DO UPDATE SET daily_target_hours = excluded.daily_target_hours, is_active = 1`,
+    args: [cleanCode, targetHours]
+  });
+
+  return { success: true, accountCode: cleanCode, targetHours };
+}
+
+/**
+ * Xóa hoặc hủy kích hoạt một Nick game khỏi danh mục hoạt động
+ */
+export async function removeOfficialAccount(accountCode) {
+  const cleanCode = normalizeAccountCode(accountCode);
+
+  // Kiểm tra xem nick có đang có ca ACTIVE chạy không
+  const activeShift = await getActiveShiftByAccount(cleanCode);
+  if (activeShift) {
+    return {
+      success: false,
+      message: `Không thể xóa Nick [${cleanCode}] vì đang có người cày (${activeShift.display_name}). Vui lòng chốt ca trước!`
+    };
+  }
+
+  // Đổi is_active = 0 thay vì xóa cứng để không ảnh hưởng dữ liệu lịch sử tính lương
+  const res = await db.execute({
+    sql: `UPDATE accounts SET is_active = 0 WHERE account_code = ?`,
+    args: [cleanCode]
+  });
+
+  if (res.rowsAffected === 0) {
+    return { success: false, message: `Không tìm thấy Nick [${cleanCode}] trong hệ thống.` };
+  }
+
+  return { success: true, accountCode: cleanCode };
+}
+
+/**
+ * Lấy toàn bộ danh sách Nick Game (cả active và inactive) cho Admin quản lý
+ */
+export async function getAllOfficialAccounts() {
+  const res = await db.execute({
+    sql: `SELECT account_code, daily_target_hours, is_active, created_at FROM accounts ORDER BY is_active DESC, account_code ASC`
+  });
+  return res.rows;
 }
 
 /**
