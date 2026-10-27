@@ -8,7 +8,7 @@ import {
 import http from 'node:http';
 import { config, validateConfig } from './config/env.js';
 import db, { initDatabase } from './database/db.js';
-import { handleButtonInteraction, handleModalInteraction } from './interactions/buttonHandler.js';
+import { handleButtonInteraction, handleModalInteraction, handleSelectMenuInteraction } from './interactions/buttonHandler.js';
 import { initReminderCron } from './services/reminderService.js';
 
 // Import các lệnh Slash
@@ -131,7 +131,13 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
 
-    // 3. Xử lý Slash Commands
+    // 3. Xử lý chọn mục từ Menu (Select Menu)
+    if (interaction.isStringSelectMenu()) {
+      await handleSelectMenuInteraction(interaction);
+      return;
+    }
+
+    // 4. Xử lý Slash Commands
     if (interaction.isChatInputCommand()) {
       const command = client.commands.get(interaction.commandName);
       if (!command) return;

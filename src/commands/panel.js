@@ -30,7 +30,7 @@ export async function execute(interaction) {
     .setColor('#57F287')
     .setFooter({ text: 'Gamefy Base Teams • Time & Account Rotation Tracker' });
 
-  const row = new ActionRowBuilder().addComponents(
+  const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('btn_checkin')
       .setLabel('🟢 Vào Ca | 출근')
@@ -38,16 +38,23 @@ export async function execute(interaction) {
     new ButtonBuilder()
       .setCustomId('btn_checkout')
       .setLabel('🔴 Hết Ca | 퇴근')
-      .setStyle(ButtonStyle.Danger),
+      .setStyle(ButtonStyle.Danger)
+  );
+
+  const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('btn_status')
-      .setLabel('📊 Tiến Độ | 근무 현황')
-      .setStyle(ButtonStyle.Secondary)
+      .setLabel('👤 Giờ Của Tôi | 내 근무')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('btn_acc_status')
+      .setLabel('🎮 Trạng Thái Nick | 계정 현황')
+      .setStyle(ButtonStyle.Primary)
   );
 
   await interaction.channel.send({
     embeds: [embed],
-    components: [row]
+    components: [row1, row2]
   });
 
   return interaction.reply({

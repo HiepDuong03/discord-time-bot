@@ -18,16 +18,15 @@ export const data = new SlashCommandBuilder()
   .setName('acc-status')
   .setDescription('Bảng theo dõi tiến độ từng Nick Game trong ngày (Song ngữ) / 계정별 일일 근무 현황');
 
-export async function execute(interaction) {
-  const workDate = getWorkDate();
+export async function buildAccountStatusEmbed(workDate = getWorkDate()) {
   const accList = await getAllAccountsTodaySummary(workDate);
   const hoursLeft = getHoursUntilCutoff().toFixed(1);
 
   if (accList.length === 0) {
-    return interaction.reply({
-      content: `ℹ️ Chưa có Nick game nào được ghi nhận ca cày hôm nay (**${workDate}**).\n*(오늘 기록된 계정 작업 내역이 없습니다.)*`,
-      ephemeral: true
-    });
+    return {
+      hasData: false,
+      message: `ℹ️ Chưa có Nick game nào được ghi nhận ca cày hôm nay (**${workDate}**).\n*(오늘 기록된 계정 작업 내역이 없습니다.)*`
+    };
   }
 
   const activeAccs = [];
@@ -93,5 +92,20 @@ export async function execute(interaction) {
   embed.setFooter({ text: 'Gamefy Base Teams • Chu kỳ chốt: 06:00 AM' });
   embed.setTimestamp();
 
-  return interaction.reply({ embeds: [embed] });
+  return {
+    hasData: true,
+    embed
+  };
+}
+
+export async function execute(interaction) {
+  const result = await buildAccountStatusEmbed();
+  if (!result.hasData) {
+    return interaction.reply({
+      content: result.message,
+      ephemeral: true
+    });
+  }
+
+  return interaction.reply({ embeds: [result.embed] });
 }

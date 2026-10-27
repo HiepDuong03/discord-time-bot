@@ -404,3 +404,81 @@ export async function adjustShiftTime(userId, minutesChange, reason, adjustedBy,
     accountCode: cleanAccount
   };
 }
+
+/**
+ * Bàn giao ca 1-chạm: Chốt giờ cho người cũ và mở ca mới cho người mới trên cùng 1 Nick
+ */
+export async function handoffShift(newUserId, newDisplayName, accountCode) {
+  const cleanAccount = normalizeAccountCode(accountCode);
+
+  await registerOrUpdateUser(newUserId, newDisplayName);
+  await registerOrUpdateAccount(cleanAccount);
+
+  // Kiểm tra xem chính người mới có đang dở ca nào không
+  const userActive = await getActiveShift(newUserId);
+  if (userActive) {
+    return {
+      success: false,
+      message: `Bạn đang có ca làm việc dở dang trên Nick [${userActive.account_code}]. Vui lòng bấm "Hết Ca" trước!`
+    };
+  }
+
+  const activeShift = await getActiveShiftByAccount(cleanAccount);
+  if (!activeShift) {
+    // Nếu nick đã trống rồi thì vào ca bình thường
+    return await startShiftWithAccount(newUserId, newDisplayName, cleanAccount);
+  }
+
+  if (activeShift.user_id === newUserId) {
+    return {
+      success: false,
+      message: `Bạn chính là người đang cày Nick [${cleanAccount}] này rồi!`
+    };
+  }
+
+  const now = new Date();
+  const checkInOld = new Date(activeShift.check_in);
+  let oldDurationMinutes = Math.max(1, Math.round((now.getTime() - checkInOld.getTime()) / (1000 * 60)));
+  if (oldDurationMinutes > MAX_SHIFT_MINUTES) oldDurationMinutes = MAX_SHIFT_MINUTES;
+
+  const nowIso = now.toISOString();
+  const workDate = getWorkDate(now);
+
+  // 1. Chốt ca người cũ
+  await db.execute({
+    sql: `UPDATE shifts
+          SET check_out = ?, duration_minutes = ?, status = 'COMPLETED', note = ?
+          WHERE id = ?`,
+    args: [nowIso, oldDurationMinutes, `[BÀN GIAO CA cho ${newDisplayName}]`, activeShift.id]
+  });
+
+  // 2. Mở ca mới cho người mới
+  const newShiftRes = await db.execute({
+    sql: `INSERT INTO shifts (user_id, account_code, check_in, work_date, status, note)
+          VALUES (?, ?, ?, ?, 'ACTIVE', ?)`,
+    args: [newUserId, cleanAccount, nowIso, workDate, `[NHẬN BÀN GIAO từ ${activeShift.display_name}]`]
+  });
+
+  // 3. Ghi log kiểm toán
+  await db.execute({
+    sql: `INSERT INTO audit_logs (shift_id, user_id, adjusted_by, minute_change, reason)
+          VALUES (?, ?, ?, 0, ?)`,
+    args: [Number(newShiftRes.lastInsertRowid), newUserId, newDisplayName, `Nhận bàn giao ca từ ${activeShift.display_name} (<@${activeShift.user_id}>)`]
+  });
+
+  return {
+    success: true,
+    accountCode: cleanAccount,
+    workDate,
+    oldUser: {
+      id: activeShift.user_id,
+      displayName: activeShift.display_name,
+      durationMinutes: oldDurationMinutes
+    },
+    newShift: {
+      id: Number(newShiftRes.lastInsertRowid),
+      checkInTime: now,
+      displayName: newDisplayName
+    }
+  };
+}
