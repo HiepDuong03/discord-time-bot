@@ -1,8 +1,8 @@
 import QuickChart from 'quickchart-js';
 import { getTeamTodaySummary } from './shiftService.js';
 
-export async function generateDailyBarChartUrl(workDate) {
-  const teamData = await getTeamTodaySummary(workDate);
+export async function generateDailyBarChartUrl(workDate, customTeamData = null) {
+  const teamData = customTeamData || await getTeamTodaySummary(workDate);
   if (teamData.length === 0) {
     return null;
   }

@@ -1,6 +1,7 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import { generateDailyBarChartUrl } from '../services/chartService.js';
 import { getTeamTodaySummary, getWorkDate } from '../services/shiftService.js';
+import { config } from '../config/env.js';
 
 function formatMinutes(minutes) {
   const m = Math.max(0, Math.round(minutes));
@@ -30,14 +31,31 @@ export async function execute(interaction) {
   await interaction.deferReply();
 
   try {
-    const chartUrl = await generateDailyBarChartUrl(targetDate);
-    const teamData = await getTeamTodaySummary(targetDate);
+    let teamData = await getTeamTodaySummary(targetDate);
+    const guild = interaction.guild;
+
+    // Lọc theo Role Member: Nếu Server có cấu hình TARGET_WORKER_ROLE_ID,
+    // chỉ giữ lại những thành viên thực tế có role Member (hoặc có ca làm trong ngày)
+    if (guild && config.targetWorkerRoleId) {
+      try {
+        await guild.members.fetch();
+        const role = guild.roles.cache.get(config.targetWorkerRoleId);
+        if (role) {
+          const validMemberIds = new Set(role.members.keys());
+          teamData = teamData.filter(m => validMemberIds.has(m.discordId) || m.totalMinutes > 0);
+        }
+      } catch (fetchErr) {
+        console.warn('[REPORT ROSTER WARN]', fetchErr.message);
+      }
+    }
 
     if (teamData.length === 0) {
       return interaction.editReply({
         content: `ℹ️ Chưa có dữ liệu chấm công nào cho ngày **${targetDate}**.\n*(해당 일자의 근무 기록이 없습니다.)*`
       });
     }
+
+    const chartUrl = await generateDailyBarChartUrl(targetDate, teamData);
 
     const leaderboardLines = teamData
       .sort((a, b) => b.totalMinutes - a.totalMinutes)

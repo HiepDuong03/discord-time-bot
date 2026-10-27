@@ -26,6 +26,10 @@ async function runTests() {
     sql: `DELETE FROM shifts WHERE user_id IN (?, ?) OR account_code = ?`,
     args: [testUserA, testUserB, testAcc]
   });
+  await db.execute({
+    sql: `DELETE FROM users WHERE discord_id IN (?, ?)`,
+    args: [testUserA, testUserB]
+  });
 
   console.log('1. Test Check-in Worker A trên Nick:', testAcc);
   const startA = await startShiftWithAccount(testUserA, testNameA, testAcc, 'Test ca sáng');
@@ -68,6 +72,10 @@ async function runTests() {
   await db.execute({
     sql: `DELETE FROM shifts WHERE user_id IN (?, ?) OR account_code = ?`,
     args: [testUserA, testUserB, testAcc]
+  });
+  await db.execute({
+    sql: `DELETE FROM users WHERE discord_id IN (?, ?)`,
+    args: [testUserA, testUserB]
   });
 
   console.log('\n🎉 TẤT CẢ CÁC BƯỚC TEST FLOW ĐÃ PASS 100% TRÊN TURSO CLOUD!');
