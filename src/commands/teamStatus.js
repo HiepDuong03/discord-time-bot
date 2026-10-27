@@ -56,18 +56,18 @@ export async function execute(interaction) {
       if (m && m.hasActiveShift) {
         const totalStr = formatMinutes(m.totalMinutes);
         activeWorkers.push(
-          `• 🟢 **${dName}** (<@${did}>) ➔ Ca này: **${m.activeMinutes}p** | Tổng: \`${totalStr} / ${m.targetHours}h\``
+          `• 🟢 **${dName}** (<@${did}>) ➔ Ca này / 이번: **${m.activeMinutes}분** | Tổng / 누적: \`${totalStr} / ${m.targetHours}h\``
         );
       } else if (m && m.totalMinutes > 0) {
         const totalStr = formatMinutes(m.totalMinutes);
         const icon = m.isAchieved ? '🌟' : m.totalMinutes >= 240 ? '🟡' : '🔴';
-        const statusNote = m.isAchieved ? 'Đạt 8h SLA' : `Thiếu ${formatMinutes(m.remainingMinutes)}`;
+        const statusNote = m.isAchieved ? 'Đạt 8h SLA (달성)' : `Thiếu ${formatMinutes(m.remainingMinutes)} (미달)`;
         offWorkers.push(
           `• ${icon} **${dName}** (<@${did}>) ➔ \`${totalStr} / ${m.targetHours}h\` (${statusNote})`
         );
       } else {
         notStartedWorkers.push(
-          `• ⚪ **${dName}** (<@${did}>) ➔ Chưa vào ca *(0.0h / 8.0h)*`
+          `• ⚪ **${dName}** (<@${did}>) ➔ Chưa vào ca / 미출근 *(0.0h / 8.0h)*`
         );
       }
     }
@@ -79,11 +79,11 @@ export async function execute(interaction) {
 
       if (m.hasActiveShift) {
         activeWorkers.push(
-          `• 🟢 **${m.displayName}** (<@${m.discordId}>) ➔ Ca này: **${m.activeMinutes}p** | Tổng: \`${totalStr} / ${targetStr}\``
+          `• 🟢 **${m.displayName}** (<@${m.discordId}>) ➔ Ca này / 이번: **${m.activeMinutes}분** | Tổng / 누적: \`${totalStr} / ${targetStr}\``
         );
       } else {
         const icon = m.isAchieved ? '🌟' : m.totalMinutes >= 240 ? '🟡' : '🔴';
-        const statusNote = m.isAchieved ? 'Đạt 8h SLA' : `Thiếu ${neededStr}`;
+        const statusNote = m.isAchieved ? 'Đạt 8h SLA (달성)' : `Thiếu ${neededStr} (미달)`;
         offWorkers.push(
           `• ${icon} **${m.displayName}** (<@${m.discordId}>) ➔ \`${totalStr} / ${targetStr}\` (${statusNote})`
         );
@@ -96,34 +96,34 @@ export async function execute(interaction) {
   const embed = new EmbedBuilder()
     .setTitle(`🛡️ QUÂN SỐ & TRẠNG THÁI NHÂN VIÊN (ROLE MEMBER) | 팀 실시간 현황`)
     .setDescription(
-      `📅 **Chu kỳ:** \`${workDate}\`  •  ⏰ **Hạn chốt ca:** còn \`${hoursLeftBeforeCutoff}h\` (06:00 sáng)\n` +
-      `👥 **Quân số (Role Member):** **${totalHeadcount}** nhân sự\n` +
-      `📊 **Phân bổ:** 🟢 **${activeWorkers.length}** Đang cày  |  ⚪ **${offWorkers.length}** Đang nghỉ  |  🔴 **${notStartedWorkers.length}** Chưa vào ca`
+      `📅 **Chu kỳ / 일자:** \`${workDate}\`  •  ⏰ **Hạn chốt / 마감:** còn \`${hoursLeftBeforeCutoff}h\` (익일 06:00)\n` +
+      `👥 **Quân số (Role Member) / 총 인원:** **${totalHeadcount}** nhân sự (명)\n` +
+      `📊 **Phân bổ / 현황:** 🟢 **${activeWorkers.length}** Đang cày (진행)  |  ⚪ **${offWorkers.length}** Đang nghỉ (휴식)  |  🔴 **${notStartedWorkers.length}** Chưa vào ca (미출근)`
     )
     .setColor('#5865F2');
 
   if (activeWorkers.length > 0) {
     embed.addFields({
-      name: `🟢 ĐANG TRONG CA (${activeWorkers.length} người / 근무 중)`,
+      name: `🟢 ĐANG TRONG CA / 근무 진행 중 (${activeWorkers.length} người / 명)`,
       value: activeWorkers.join('\n')
     });
   }
 
   if (offWorkers.length > 0) {
     embed.addFields({
-      name: `⚪ ĐÃ CÀY HÔM NAY - ĐANG NGHỈ (${offWorkers.length} người / 휴식 중)`,
+      name: `⚪ ĐÃ CÀY HÔM NAY - ĐANG NGHỈ / 휴식 중 (${offWorkers.length} người / 명)`,
       value: offWorkers.join('\n')
     });
   }
 
   if (notStartedWorkers.length > 0) {
     embed.addFields({
-      name: `🔴 CHƯA VÀO CA HÔM NAY (${notStartedWorkers.length} người / 미출근)`,
+      name: `🔴 CHƯA VÀO CA HÔM NAY / 미출근 (${notStartedWorkers.length} người / 명)`,
       value: notStartedWorkers.join('\n')
     });
   }
 
-  embed.setFooter({ text: 'Gamefy Base Teams • Member Role Live Roster' });
+  embed.setFooter({ text: 'Gamefy Base Teams • Member Role Live Roster | 팀 인원 현황' });
   embed.setTimestamp();
 
   return interaction.reply({

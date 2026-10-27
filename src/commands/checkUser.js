@@ -9,7 +9,7 @@ function formatMinutes(minutes) {
   const decimalHours = (m / 60).toFixed(2);
 
   if (hours === 0) {
-    return `${remainingMins} phút (${decimalHours}h)`;
+    return `${remainingMins} phút / 분 (${decimalHours}h)`;
   }
   return `${hours}h ${remainingMins}p (${decimalHours}h)`;
 }
@@ -38,7 +38,7 @@ export async function execute(interaction) {
 
   // Lấy danh sách các ca làm của user trong ngày
   const shiftsRes = await db.execute({
-    sql: `SELECT id, check_in, check_out, duration_minutes, status, note
+    sql: `SELECT id, account_code, check_in, check_out, duration_minutes, status, note
           FROM shifts
           WHERE user_id = ? AND work_date = ?
           ORDER BY check_in ASC`,
@@ -48,34 +48,39 @@ export async function execute(interaction) {
 
   const totalStr = formatMinutes(summary.totalMinutes);
   const remainingStr = formatMinutes(summary.remainingMinutes);
-  const statusIcon = summary.isAchieved ? '✅ ĐẠT 8H' : '⚠️ THIẾU GIỜ';
+  const statusIcon = summary.isAchieved ? '✅ ĐẠT 8H (달성)' : '⚠️ THIẾU GIỜ (미달)';
 
   let shiftListStr = '';
   if (shifts.length === 0) {
-    shiftListStr = '*Không có ca làm việc nào được ghi nhận trong ngày này.*';
+    shiftListStr = '*Không có ca làm việc nào được ghi nhận trong ngày này / 해당 일자의 근무 기록이 없습니다.*';
   } else {
     shiftListStr = shifts.map((s, idx) => {
       const inTime = new Date(s.check_in).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
       const outTime = s.check_out 
         ? new Date(s.check_out).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
-        : '⏳ Đang làm...';
-      const durationStr = s.check_out ? formatMinutes(s.duration_minutes) : 'Chưa kết thúc';
-      const noteStr = s.note ? ` | Note: *${s.note}*` : '';
-      return `**Ca ${idx + 1}:** \`${inTime}\` ➔ \`${outTime}\` (**${durationStr}**) [${s.status}]${noteStr}`;
+        : 'Đang cày (진행 중)';
+      const dur = s.duration_minutes ? formatMinutes(s.duration_minutes) : 'Đang chạy (진행 중)';
+      const acc = s.account_code ? `\`[${s.account_code}]\`` : '';
+      const note = s.note ? ` • *${s.note}*` : '';
+      return `**${idx + 1}.** ${acc} ${inTime} ➔ ${outTime} (**${dur}**)${note}`;
     }).join('\n');
   }
 
   const embed = new EmbedBuilder()
-    .setTitle(`👤 CHI TIẾT CA LÀM VIỆC: ${targetUser.username}`)
+    .setTitle(`👤 HỒ SƠ CHẤM CÔNG NHÂN VIÊN | 개인 근무 이력 조회`)
     .setDescription(
-      `• **Nhân sự:** <@${targetUser.id}>\n` +
-      `• **Ngày làm việc:** \`${targetDate}\`\n` +
-      `• **Tổng thời gian tích lũy:** **${totalStr} / ${summary.targetHours}h** (${statusIcon})\n` +
-      `• **Số giờ còn thiếu:** **${remainingStr}**\n\n` +
-      `📋 **Lịch sử các ca trong ngày:**\n${shiftListStr}`
+      `• **Nhân sự / 근무자:** <@${targetUser.id}> (${targetUser.username})\n` +
+      `• **Ngày làm việc / 일자:** \`${targetDate}\`\n` +
+      `• **Tổng giờ / 총 근무:** \`${totalStr} / ${summary.targetHours}h\`\n` +
+      `• **Trạng thái / 상태:** \`${statusIcon}\` (Thiếu / 잔여: ${remainingStr})\n\n` +
+      `-# 🎯 Tiêu chuẩn cá nhân: 8.0h/ngày • 🇰🇷 일일 개인 목표 8.0시간`
     )
-    .setColor('#9B59B6')
-    .setFooter({ text: 'Dành riêng cho Quản lý • AURA Management' })
+    .setColor('#00D8F6')
+    .addFields({
+      name: `📋 CHI TIẾT CÁC CA LÀM / 근무 세부 기록 (${shifts.length} ca / 회)`,
+      value: shiftListStr
+    })
+    .setFooter({ text: 'Gamefy Base Teams • Employee Audit Service | 개인 감사' })
     .setTimestamp();
 
   return interaction.reply({

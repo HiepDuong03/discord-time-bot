@@ -56,12 +56,13 @@ export async function execute(interaction) {
     const embed = new EmbedBuilder()
       .setTitle('✅ THÊM NICK GAME THÀNH CÔNG | 계정 등록 완료')
       .setDescription(
-        `> **Mã Nick:** \`[${result.accountCode}]\`\n` +
-        `> **Chỉ tiêu:** \`${result.targetHours.toFixed(1)}h / ngày\`\n\n` +
+        `> **Mã Nick / 계정 코드:** \`[${result.accountCode}]\`\n` +
+        `> **Chỉ tiêu / 일일 목표:** \`${result.targetHours.toFixed(1)}h / ngày (일)\`\n\n` +
         `🎮 Nick này đã được kích hoạt và xuất hiện ngay trong menu **Vào Ca** của nhân sự!\n` +
         `-# 🇰🇷 해당 계정이 등록되어 작업자 출근 메뉴에 추가되었습니다.`
       )
       .setColor('#57F287')
+      .setFooter({ text: 'Gamefy Base Teams • Account Management | 계정 관리' })
       .setTimestamp();
 
     return interaction.reply({ embeds: [embed] });
@@ -82,11 +83,12 @@ export async function execute(interaction) {
     const embed = new EmbedBuilder()
       .setTitle('🗑️ ĐÃ GỠ NICK GAME KHỎI HOẠT ĐỘNG | 계정 비활성화')
       .setDescription(
-        `> **Mã Nick đã gỡ:** \`[${result.accountCode}]\`\n\n` +
+        `> **Mã Nick đã gỡ / 비활성화 계정:** \`[${result.accountCode}]\`\n\n` +
         `🛡️ Nick này đã được ẩn khỏi danh mục chọn ca cày của nhân sự. Toàn bộ lịch sử ca làm và bảng lương trước đây vẫn được bảo lưu an toàn!\n` +
         `-# 🇰🇷 해당 계정은 출근 목록에서 제외되었으며 기존 근무 기록은 안전하게 보존됩니다.`
       )
       .setColor('#ED4245')
+      .setFooter({ text: 'Gamefy Base Teams • Account Management | 계정 관리' })
       .setTimestamp();
 
     return interaction.reply({ embeds: [embed] });
@@ -98,7 +100,7 @@ export async function execute(interaction) {
 
     if (accounts.length === 0) {
       return interaction.reply({
-        content: 'ℹ️ Chưa có Nick game nào trong danh mục. Dùng `/acc-manage add code:<tên>` để thêm!',
+        content: 'ℹ️ Chưa có Nick game nào trong danh mục. Dùng `/acc-manage add code:<tên>` để thêm!\n*(등록된 계정이 없습니다. /acc-manage add 명령어로 추가하세요.)*',
         ephemeral: true
       });
     }
@@ -109,29 +111,31 @@ export async function execute(interaction) {
     const embed = new EmbedBuilder()
       .setTitle('📋 DANH MỤC NICK GAME QUẢN LÝ | 계정 관리 목록')
       .setDescription(
-        `• **Tổng số Nick:** \`${accounts.length}\` (${activeList.length} đang hoạt động, ${inactiveList.length} đã tắt)\n` +
-        `• **Chỉ tiêu chuẩn:** \`8.0h / ngày / nick\`\n\n` +
-        `-# 💡 Dùng lệnh \`/acc-manage add\` để thêm mới hoặc \`/acc-manage remove\` để gỡ.`
+        `• **Tổng số Nick / 총 계정 수:** \`${accounts.length}\` (${activeList.length} đang bật 활성, ${inactiveList.length} đã tắt 비활성)\n` +
+        `• **Chỉ tiêu chuẩn / 기본 목표:** \`8.0h / ngày / nick (일일 8시간)\`\n\n` +
+        `-# 💡 Dùng lệnh \`/acc-manage add\` để thêm mới hoặc \`/acc-manage remove\` để gỡ.\n` +
+        `-# 🇰🇷 /acc-manage add (계정 추가), /acc-manage remove (계정 비활성화)`
       )
       .setColor('#5865F2')
+      .setFooter({ text: 'Gamefy Base Teams • Account Management | 계정 관리' })
       .setTimestamp();
 
     if (activeList.length > 0) {
       const lines = activeList.map((a, i) => 
-        `\`${String(i + 1).padStart(2, '0')}.\` 🟢 \`[${a.account_code}]\` • Target: **${Number(a.daily_target_hours).toFixed(1)}h**`
+        `\`${String(i + 1).padStart(2, '0')}.\` 🟢 \`[${a.account_code}]\` • Target / 목표: **${Number(a.daily_target_hours).toFixed(1)}h**`
       );
       embed.addFields({
-        name: `🟢 ĐANG HOẠT ĐỘNG (${activeList.length} Nick)`,
+        name: `🟢 ĐANG HOẠT ĐỘNG / 활성 계정 (${activeList.length} Nick / 개)`,
         value: lines.join('\n')
       });
     }
 
     if (inactiveList.length > 0) {
       const lines = inactiveList.map((a, i) => 
-        `\`${String(i + 1).padStart(2, '0')}.\` ⚪ \`[${a.account_code}]\` • *(Đã tắt)*`
+        `\`${String(i + 1).padStart(2, '0')}.\` ⚪ \`[${a.account_code}]\` • *(Đã tắt / 비활성)*`
       );
       embed.addFields({
-        name: `⚪ ĐÃ TẮT / KHÔNG HOẠT ĐỘNG (${inactiveList.length} Nick)`,
+        name: `⚪ ĐÃ TẮT / 비활성 계정 (${inactiveList.length} Nick / 개)`,
         value: lines.join('\n')
       });
     }

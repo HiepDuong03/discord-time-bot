@@ -64,21 +64,22 @@ export async function execute(interaction) {
         const timeStr = formatMinutes(member.totalMinutes);
         const icon = member.isAchieved ? '🟢' : member.totalMinutes >= 240 ? '🟡' : '🔴';
         const statusText = member.isAchieved 
-          ? '🌟 Đạt 8h' 
-          : `Thiếu ${formatMinutes(member.remainingMinutes)}`;
-        return `${rankPrefix} ${icon} **${member.displayName}** ➔ \`${timeStr} / 8.0h\` (${statusText})`;
+          ? '🌟 Đạt 8h (달성)' 
+          : `Thiếu ${formatMinutes(member.remainingMinutes)} (미달)`;
+        return `${rankPrefix} ${icon} **${member.displayName}** ➔ \`${timeStr} / 8.0h\` • *${statusText}*`;
       });
 
     const embed = new EmbedBuilder()
-      .setTitle(`📊 BÁO CÁO TIẾN ĐỘ TOÀN ĐỘI | 일일 근무 현황`)
+      .setTitle(`📊 BÁO CÁO TIẾN ĐỘ TOÀN ĐỘI | 일일 근무 현황 보고서`)
       .setDescription(
-        `> **TIẾN ĐỘ CHỈ TIÊU & BIỂU ĐỒ NĂNG SUẤT (${targetDate})**\n\n` +
-        `🏆 **Bảng xếp hạng cày game hôm nay:**\n${leaderboardLines.join('\n')}\n\n` +
+        `> **TIẾN ĐỘ CHỈ TIÊU & BIỂU ĐỒ NĂNG SUẤT (${targetDate})**\n` +
+        `> *Game Farming Shift & Performance Report*\n\n` +
+        `🏆 **Bảng xếp hạng cày game hôm nay / 일일 근무 랭킹:**\n${leaderboardLines.join('\n')}\n\n` +
         `-# 💡 Đường kẻ đỏ nét đứt: Mốc chỉ tiêu 8h/ngày | 붉은 점선: 일일 목표 8시간`
       )
       .setColor('#5865F2')
       .setImage(chartUrl)
-      .setFooter({ text: 'Gamefy Base Teams • Performance Analytics' })
+      .setFooter({ text: 'Gamefy Base Teams • Performance Analytics | 근무 실적 분석' })
       .setTimestamp();
 
     return interaction.editReply({ embeds: [embed] });

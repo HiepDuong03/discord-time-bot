@@ -36,15 +36,15 @@ export async function buildAccountStatusEmbed(workDate = getWorkDate()) {
 
     if (acc.hasActiveShift) {
       activeAccs.push(
-        `• \`[${acc.accountCode}]\` \`${miniBar}\` **${doneH}/${targetH}** • 🟢 **${acc.activeFarmerName}** (${acc.activeMinutes}p)`
+        `• \`[${acc.accountCode}]\` \`${miniBar}\` **${doneH}/${targetH}** • 🟢 **${acc.activeFarmerName}** (${acc.activeMinutes}분)`
       );
     } else if (acc.isAchieved) {
       achievedAccs.push(
-        `• \`[${acc.accountCode}]\` \`${miniBar}\` **${doneH}/${targetH}** • 🌟 Đạt SLA`
+        `• \`[${acc.accountCode}]\` \`${miniBar}\` **${doneH}/${targetH}** • 🌟 Đạt SLA (목표 달성)`
       );
     } else {
       deficitAccs.push(
-        `• \`[${acc.accountCode}]\` \`${miniBar}\` **${doneH}/${targetH}** • ⚪ Trống *(Thiếu ${remH}h)*`
+        `• \`[${acc.accountCode}]\` \`${miniBar}\` **${doneH}/${targetH}** • ⚪ Trống • Thiếu ${remH}h *(대기 • 잔여 ${remH}h)*`
       );
     }
   }
@@ -52,34 +52,34 @@ export async function buildAccountStatusEmbed(workDate = getWorkDate()) {
   const embed = new EmbedBuilder()
     .setTitle(`🎮 TIẾN ĐỘ TỪNG NICK GAME | 계정별 작업 현황`)
     .setDescription(
-      `📅 **Chu kỳ:** \`${workDate}\`  •  ⏰ **Hạn chốt ca:** còn \`${hoursLeft}h\` (06:00 sáng)\n` +
-      `📊 **Tổng quan:** **${activeAccs.length}** Đang cày  |  **${deficitAccs.length}** Đang trống  |  **${achievedAccs.length}** Đạt SLA\n` +
-      `-# 🎯 Tiêu chuẩn: 8.0h/nick/ngày • 🇰🇷 일일 계정 목표 8.0시간`
+      `📅 **Chu kỳ / 일자:** \`${workDate}\`  •  ⏰ **Hạn chốt ca / 마감:** còn \`${hoursLeft}h\` (익일 06:00)\n` +
+      `📊 **Tổng quan / 진행 현황:** **${activeAccs.length}** Đang cày (진행)  |  **${deficitAccs.length}** Đang trống (대기)  |  **${achievedAccs.length}** Đạt SLA (달성)\n` +
+      `-# 🎯 Tiêu chuẩn / 목표: 8.0h/nick/ngày • 🇰🇷 일일 계정 목표 8.0시간`
     )
     .setColor('#5865F2');
 
   if (activeAccs.length > 0) {
     embed.addFields({
-      name: `🟢 ĐANG CÓ NGƯỜI CÀY (${activeAccs.length} Nick / 진행 중)`,
+      name: `🟢 ĐANG CÓ NGƯỜI CÀY / 작업 진행 중 (${activeAccs.length} Nick / 개)`,
       value: activeAccs.join('\n')
     });
   }
 
   if (deficitAccs.length > 0) {
     embed.addFields({
-      name: `⚪ ĐANG TRỐNG / CẦN CÀY (${deficitAccs.length} Nick / 대기 중)`,
+      name: `⚪ ĐANG TRỐNG - CẦN CÀY / 작업 대기 (${deficitAccs.length} Nick / 개)`,
       value: deficitAccs.join('\n')
     });
   }
 
   if (achievedAccs.length > 0) {
     embed.addFields({
-      name: `🌟 ĐÃ HOÀN THÀNH SLA (${achievedAccs.length} Nick / 달성 완료)`,
+      name: `🌟 ĐÃ HOÀN THÀNH SLA / 목표 달성 완료 (${achievedAccs.length} Nick / 개)`,
       value: achievedAccs.join('\n')
     });
   }
 
-  embed.setFooter({ text: 'Gamefy Base Teams • Account SLA Monitor' });
+  embed.setFooter({ text: 'Gamefy Base Teams • Account SLA Monitor | 계정 SLA 모니터링' });
   embed.setTimestamp();
 
   return {

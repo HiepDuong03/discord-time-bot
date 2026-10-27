@@ -185,8 +185,8 @@ export async function checkEmergencySlaDeficit(client, hourTag = '23') {
       .setTitle(`🚨 CẢNH BÁO NGUY CƠ VỠ SLA NICK GAME (${hourTag}:00) | 긴급 SLA 경고`)
       .setDescription(
         `> **PHÁT HIỆN TÀI KHOẢN CÓ NGUY CƠ CAO KHÔNG ĐỦ 8.0H HÔM NAY!**\n` +
-        `> *Emergency SLA Feasibility Check*\n\n` +
-        `⏰ **Thời gian còn lại đến 06:00 sáng mai:** \`${hoursLeft.toFixed(1)} giờ\`\n` +
+        `> *Emergency SLA Feasibility Check / 일일 목표 미달 위험*\n\n` +
+        `⏰ **Thời gian còn lại đến 06:00 sáng mai / 마감까지:** \`${hoursLeft.toFixed(1)} giờ / 시간\`\n` +
         `-# 🇰🇷 아래 계정들은 오늘 목표 8시간 달성이 불가능하거나 위험 수준입니다.`
       )
       .setColor('#ED4245')
@@ -215,7 +215,7 @@ export async function checkEmergencySlaDeficit(client, hourTag = '23') {
       });
     }
 
-    embed.setFooter({ text: 'Gamefy Base Teams • SLA Emergency Monitor' });
+    embed.setFooter({ text: 'Gamefy Base Teams • SLA Emergency Monitor | 긴급 SLA 모니터링' });
 
     await channel.send({
       content: '📢 **@here CẢNH BÁO TIẾN ĐỘ NICK GAME ĐÊM MUỘN / 야간 긴급 근무 경고!**',

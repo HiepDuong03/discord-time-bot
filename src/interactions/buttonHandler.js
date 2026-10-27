@@ -207,15 +207,16 @@ export async function handleButtonInteraction(interaction) {
     const embed = new EmbedBuilder()
       .setTitle('🔴 KẾT THÚC CA LÀM VIỆC | 퇴근 완료')
       .setDescription(
-        `> **Nick vừa cày:** \`[${result.accountCode}]\`  •  **Ca vừa rồi:** **${shiftDurationText}**\n\n` +
-        `👤 **Tổng giờ của bạn hôm nay:** \`${memberTotalText} / 8.0h\`\n` +
-        `🛡️ **Tổng giờ Nick [${result.accountCode}]:** \`${accountTotalText} / 8.0h\`\n` +
+        `> **Nhân sự / 근무자:** **${displayName}**\n` +
+        `> **Nick vừa cày / 작업 계정:** \`[${result.accountCode}]\`  •  **Ca vừa rồi / 이번 근무:** **${shiftDurationText}**\n\n` +
+        `👤 **Tổng giờ của bạn hôm nay / 오늘 개인 총 근무:** \`${memberTotalText} / 8.0h\`\n` +
+        `🛡️ **Tổng giờ Nick [${result.accountCode}] / 오늘 계정 총 작업:** \`${accountTotalText} / 8.0h\`\n` +
         `└ ${accountStatusText}\n\n` +
         `-# 💡 Đã mở khóa nick. Đồng đội tiếp theo có thể nhận ca!\n` +
         `-# 🇰🇷 다음 작업자를 위해 계정 잠금이 해제되었습니다.`
       )
       .setColor('#ED4245')
-      .setFooter({ text: 'Gamefy Base Teams • Shift Completed' })
+      .setFooter({ text: 'Gamefy Base Teams • Shift Completed | 퇴근 완료' })
       .setTimestamp();
 
     return interaction.editReply({
@@ -239,22 +240,22 @@ export async function handleButtonInteraction(interaction) {
     const progressBar = createProgressBar(rawPercent);
 
     let currentShiftStatus = summary.hasActiveShift 
-      ? `🟢 **Đang trong ca** trên Nick \`[${summary.activeAccount}]\` (Đã cày: ${formatMinutes(summary.activeMinutes)})`
-      : `⚪ **Đang nghỉ ngơi**`;
+      ? `🟢 **Đang trong ca / 근무 중** trên Nick \`[${summary.activeAccount}]\` (Đã cày: ${formatMinutes(summary.activeMinutes)})`
+      : `⚪ **Đang nghỉ ngơi / 휴식 중**`;
 
     const embed = new EmbedBuilder()
       .setTitle('📊 TIẾN ĐỘ CÁ NHÂN HÔM NAY | 개인 근무 현황')
       .setDescription(
-        `• **Trạng thái:** ${currentShiftStatus}\n` +
-        `• **Tiến độ:** \`${progressBar}\` **${displayPercent}%**\n\n` +
-        `⏱️ **Tổng giờ của bạn:** \`${totalText} / 8.0h\`\n` +
-        `⏳ **Còn thiếu:** \`${remainingText}\`\n` +
-        `⏰ **Hạn chốt ca:** còn \`${hoursLeftBeforeCutoff}h\` (trước 06:00 sáng mai)\n\n` +
+        `• **Trạng thái / 상태:** ${currentShiftStatus}\n` +
+        `• **Tiến độ / 달성률:** \`${progressBar}\` **${displayPercent}%**\n\n` +
+        `⏱️ **Tổng giờ của bạn / 총 근무 시간:** \`${totalText} / 8.0h\`\n` +
+        `⏳ **Còn thiếu / 부족한 시간:** \`${remainingText}\`\n` +
+        `⏰ **Hạn chốt ca / 마감:** còn \`${hoursLeftBeforeCutoff}h\` (trước 06:00 sáng mai / 익일 06:00 마감)\n\n` +
         `-# 💡 Bấm nút [🎮 Trạng Thái Nick] để xem tiến độ của từng tài khoản game.\n` +
         `-# 🇰🇷 계정 현황 버튼으로 계정별 진행 상황을 확인할 수 있습니다.`
       )
       .setColor('#00D8F6')
-      .setFooter({ text: `Chu kỳ làm việc: ${summary.workDate}` })
+      .setFooter({ text: `Chu kỳ làm việc / 일자: ${summary.workDate}` })
       .setTimestamp();
 
     return interaction.editReply({
@@ -313,12 +314,13 @@ export async function handleButtonInteraction(interaction) {
       .setTitle('⚡ BÀN GIAO CA THÀNH CÔNG | 인수인계 완료')
       .setDescription(
         `> Bạn đã chính thức nhận ca trên Nick **\`[${result.accountCode}]\`**!\n\n` +
-        `• **Chốt ca người cũ:** <@${result.oldUser.id}> (**${result.oldUser.displayName}**) — Tổng ca: **${oldDurationStr}**\n` +
-        `• **Ca mới của bạn:** Bắt đầu lúc **${checkInTimeStr}**\n\n` +
-        `📸 **Nhắc nhở:** Vui lòng chụp ảnh màn hình nhận nick gửi vào kênh!\n` +
+        `• **Chốt ca người cũ / 이전 근무자:** <@${result.oldUser.id}> (**${result.oldUser.displayName}**) — Tổng ca: **${oldDurationStr}**\n` +
+        `• **Ca mới của bạn / 새 근무:** Bắt đầu lúc **${checkInTimeStr}**\n\n` +
+        `📸 **Nhắc nhở / 주의사항:** Vui lòng chụp ảnh màn hình nhận nick gửi vào kênh!\n` +
         `-# 🇰🇷 교대 완료! 이전 작업자 퇴근 처리 및 새로운 근무가 시작되었습니다.`
       )
       .setColor('#57F287')
+      .setFooter({ text: 'Gamefy Base Teams • Shift Handover | 인수인계 완료' })
       .setTimestamp();
 
     await interaction.update({
@@ -331,12 +333,14 @@ export async function handleButtonInteraction(interaction) {
       const publicNotice = new EmbedBuilder()
         .setTitle('⚡ THÔNG BÁO BÀN GIAO CA | 교대 알림')
         .setDescription(
-          `🎮 **Nick Game (계정):** \`[${result.accountCode}]\`\n` +
-          `📤 **Người giao ca:** <@${result.oldUser.id}> (**${result.oldUser.displayName}**) — Đã làm: **${oldDurationStr}**\n` +
-          `📥 **Người nhận ca:** <@${user.id}> (**${displayName}**) — Bắt đầu lúc: **${checkInTimeStr}**\n\n` +
-          `-# 💡 Hệ thống đã tự động chốt ca cho người cũ và tính giờ cho người nhận ca.`
+          `🎮 **Nick Game / 작업 계정:** \`[${result.accountCode}]\`\n` +
+          `📤 **Người giao ca / 이전 작업자:** <@${result.oldUser.id}> (**${result.oldUser.displayName}**) — Đã làm: **${oldDurationStr}**\n` +
+          `📥 **Người nhận ca / 인수 작업자:** <@${user.id}> (**${displayName}**) — Bắt đầu lúc: **${checkInTimeStr}**\n\n` +
+          `-# 💡 Hệ thống đã tự động chốt ca cho người cũ và tính giờ cho người nhận ca.\n` +
+          `-# 🇰🇷 시스템이 이전 작업자를 자동 퇴근 처리하고 새 작업자의 근무를 시작했습니다.`
         )
         .setColor('#5865F2')
+        .setFooter({ text: 'Gamefy Base Teams • Shift Handover Notice' })
         .setTimestamp();
 
       await interaction.channel.send({ embeds: [publicNotice] });
@@ -452,14 +456,14 @@ export async function handleSelectMenuInteraction(interaction) {
   const embed = new EmbedBuilder()
     .setTitle('🟢 CHECK-IN THÀNH CÔNG | 출근 완료')
     .setDescription(
-      `> Nhân sự: **${displayName}**  •  Giờ vào: **${checkInTimeStr}**\n\n` +
-      `🎮 **Nick Game (계정):** \`[${result.accountCode}]\`\n` +
-      `📊 **Tiến độ Nick hôm nay:** \`${accDoneSoFar} / 8.0h\`\n\n` +
-      `📸 **Lưu ý:** Chụp ảnh màn hình nhận nick gửi vào kênh này!\n` +
+      `> **Nhân sự / 근무자:** **${displayName}**  •  **Giờ vào / 출근 시간:** **${checkInTimeStr}**\n\n` +
+      `🎮 **Nick Game / 작업 계정:** \`[${result.accountCode}]\`\n` +
+      `📊 **Tiến độ Nick hôm nay / 오늘 계정 누적:** \`${accDoneSoFar} / 8.0h\`\n\n` +
+      `📸 **Lưu ý / 주의사항:** Chụp ảnh màn hình nhận nick gửi vào kênh này!\n` +
       `-# 🇰🇷 작업 시작 인증샷을 전송하고 교대 시 퇴근 버튼을 꼭 눌러주세요.`
     )
     .setColor('#57F287')
-    .setFooter({ text: 'Gamefy Base Teams • Shift Started' })
+    .setFooter({ text: 'Gamefy Base Teams • Shift Started | 출근 완료' })
     .setTimestamp();
 
   return interaction.update({
@@ -529,14 +533,14 @@ export async function handleModalInteraction(interaction) {
   const embed = new EmbedBuilder()
     .setTitle('🟢 CHECK-IN THÀNH CÔNG | 출근 완료')
     .setDescription(
-      `> Nhân sự: **${displayName}**  •  Giờ vào: **${checkInTimeStr}**\n\n` +
-      `🎮 **Nick Game (계정):** \`[${result.accountCode}]\`\n` +
-      `📊 **Tiến độ Nick hôm nay:** \`${accDoneSoFar} / 8.0h\`${noteStr}\n\n` +
-      `📸 **Lưu ý:** Chụp ảnh màn hình nhận nick gửi vào kênh này!\n` +
+      `> **Nhân sự / 근무자:** **${displayName}**  •  **Giờ vào / 출근 시간:** **${checkInTimeStr}**\n\n` +
+      `🎮 **Nick Game / 작업 계정:** \`[${result.accountCode}]\`\n` +
+      `📊 **Tiến độ Nick hôm nay / 오늘 계정 누적:** \`${accDoneSoFar} / 8.0h\`${noteStr}\n\n` +
+      `📸 **Lưu ý / 주의사항:** Chụp ảnh màn hình nhận nick gửi vào kênh này!\n` +
       `-# 🇰🇷 교대 시 인증샷을 전송하고 퇴근 버튼을 꼭 눌러주세요.`
     )
     .setColor('#57F287')
-    .setFooter({ text: 'Gamefy Base Teams • Shift Started' })
+    .setFooter({ text: 'Gamefy Base Teams • Shift Started | 출근 완료' })
     .setTimestamp();
 
   return interaction.reply({

@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
+import { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
 import { forceEndShiftByUser, forceReleaseAccount, normalizeAccountCode } from '../services/shiftService.js';
 import { config } from '../config/env.js';
 
@@ -30,7 +30,7 @@ export async function execute(interaction) {
 
   if (!targetUser && !targetAccount) {
     return interaction.reply({
-      content: '❌ Bạn phải chọn ít nhất 1 trong 2: **Chọn Thành Viên** (`user`) HOẶC **Nhập Mã Nick** (`account`) để giải phóng!',
+      content: '❌ Bạn phải chọn ít nhất 1 trong 2: **Chọn Thành Viên** (`user`) HOẶC **Nhập Mã Nick** (`account`) để giải phóng!\n*(user 또는 account 중 하나를 입력해야 합니다.)*',
       ephemeral: true
     });
   }
@@ -58,27 +58,31 @@ export async function execute(interaction) {
 
     if (!result.success) {
       return interaction.reply({
-        content: `⚠️ **Không thể giải phóng:** ${result.message}`,
+        content: `⚠️ **Thông báo / 알림:** ${result.message}`,
         ephemeral: true
       });
     }
 
-    const durationHours = (result.durationMinutes / 60).toFixed(2);
+    const embed = new EmbedBuilder()
+      .setTitle('⛔ CƯỠNG CHẾ KẾT THÚC CA THÀNH CÔNG | 강제 퇴근 처리 완료')
+      .setDescription(
+        `• **Đối tượng / 대상:** ${targetName}\n` +
+        `• **Nick game / 작업 계정:** \`[${result.accountCode}]\`\n` +
+        `• **Thời gian ca / 근무 시간:** **${result.durationMinutes} phút / 분** (${(result.durationMinutes / 60).toFixed(2)}h)\n` +
+        `• **Người thực hiện / 처리자:** **${leaderName}**\n` +
+        `• **Lý do / 사유:** *${reason}*\n\n` +
+        `-# 💡 Đã giải phóng nick game. Nhân sự tiếp theo có thể nhận ca ngay!\n` +
+        `-# 🇰🇷 계정이 정상적으로 잠금 해제되어 교대 작업이 가능합니다.`
+      )
+      .setColor('#ED4245')
+      .setFooter({ text: 'Gamefy Base Teams • Force Checkout Service | 강제 퇴근 관리' })
+      .setTimestamp();
 
-    return interaction.reply({
-      content: `⚡ **CƯỠNG CHẾ GIẢI PHÓNG THÀNH CÔNG! / 강제 퇴근 및 계정 해제 완료!**\n\n` +
-               `• **Đối tượng / 대상:** ${targetName}\n` +
-               `• **Nick được mở khóa / 해제된 계정:** \`[${result.accountCode}]\`\n` +
-               `• **Thời lượng ca đã chốt:** **${durationHours}h** (${result.durationMinutes} phút)\n` +
-               `• **Người thực hiện:** **${leaderName}**\n` +
-               `• **Lý do / 사유:** *${reason}*\n\n` +
-               `🟢 **Trạng thái:** Nick \`[${result.accountCode}]\` hiện đã TRỐNG, anh em khác có thể xoay ca vào cày ngay!`,
-      ephemeral: false
-    });
+    return interaction.reply({ embeds: [embed] });
   } catch (error) {
-    console.error('[FORCE_CHECKOUT ERROR]', error);
+    console.error('[FORCE CHECKOUT ERROR]', error);
     return interaction.reply({
-      content: `❌ Lỗi khi thực hiện cưỡng chế: ${error.message}`,
+      content: `❌ Lỗi khi cưỡng chế kết thúc ca / 오류 발생: ${error.message}`,
       ephemeral: true
     });
   }
