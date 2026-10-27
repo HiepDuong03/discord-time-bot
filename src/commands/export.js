@@ -312,7 +312,7 @@ export async function execute(interaction) {
       inline: false
     });
 
-    embed.setFooter({ text: 'AURA Time Tracking • Excel Audit & Payroll Service' });
+    embed.setFooter({ text: 'AURA Time Tracking • Excel Audit & Payroll Service | 급여 정산 및 감사' });
     embed.setTimestamp();
 
     return interaction.editReply({

@@ -28,7 +28,7 @@ export async function execute(interaction) {
       '-# 💡 Bấm nút bên dưới để ghi nhận giờ làm | 아래 버튼을 눌러 출퇴근을 기록하세요.'
     )
     .setColor('#57F287')
-    .setFooter({ text: 'Gamefy Base Teams • Time & Account Rotation Tracker' });
+    .setFooter({ text: 'Gamefy Base Teams • Time & Account Rotation Tracker | 출퇴근 및 계정 관리' });
 
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()

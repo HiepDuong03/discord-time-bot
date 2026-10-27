@@ -340,7 +340,7 @@ export async function handleButtonInteraction(interaction) {
           `-# 🇰🇷 시스템이 이전 작업자를 자동 퇴근 처리하고 새 작업자의 근무를 시작했습니다.`
         )
         .setColor('#5865F2')
-        .setFooter({ text: 'Gamefy Base Teams • Shift Handover Notice' })
+        .setFooter({ text: 'Gamefy Base Teams • Shift Handover Notice | 교대 알림' })
         .setTimestamp();
 
       await interaction.channel.send({ embeds: [publicNotice] });
