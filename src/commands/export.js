@@ -66,7 +66,7 @@ export function smartParseDate(raw) {
 
 export const data = new SlashCommandBuilder()
   .setName('export')
-  .setDescription('Xuất file Excel tổng hợp số giờ làm theo khoảng ngày để tính lương')
+  .setDescription('Xuất file Excel tổng hợp giờ làm & SLA / 근무 시간 엑셀 보고서 출력')
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
   .addStringOption(option =>
     option.setName('range')
@@ -84,13 +84,13 @@ export const data = new SlashCommandBuilder()
   )
   .addStringOption(option =>
     option.setName('from')
-      .setDescription('Từ ngày (Click gợi ý hoặc gõ số ngày: 1, 15, 2026-10-01)')
+      .setDescription('Từ ngày (Click gợi ý hoặc gõ: 1, 15, 2026-10-01) / 시작일')
       .setRequired(false)
       .setAutocomplete(true)
   )
   .addStringOption(option =>
     option.setName('to')
-      .setDescription('Đến ngày (Click gợi ý hoặc gõ số ngày: 27, 2026-10-27)')
+      .setDescription('Đến ngày (Click gợi ý hoặc gõ: 27, 2026-10-27) / 종료일')
       .setRequired(false)
       .setAutocomplete(true)
   );
