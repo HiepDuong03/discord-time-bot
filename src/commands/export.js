@@ -69,8 +69,8 @@ export const data = new SlashCommandBuilder()
   .setDescription('Xuất file Excel tổng hợp số giờ làm theo khoảng ngày để tính lương')
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
   .addStringOption(option =>
-    option.setName('khoang_thoi_gian')
-      .setDescription('Chọn nhanh khoảng thời gian định kỳ / 빠른 기간 선택')
+    option.setName('range')
+      .setDescription('Khoảng thời gian định kỳ (Tháng này, Tuần này...) / 빠른 기간 선택')
       .setRequired(false)
       .addChoices(
         { name: '📅 Tháng này / 이번 달 (Từ ngày 01 đến hôm nay)', value: 'this_month' },
@@ -165,7 +165,7 @@ export async function autocomplete(interaction) {
 }
 
 export async function execute(interaction) {
-  const preset = interaction.options.getString('khoang_thoi_gian');
+  const preset = interaction.options.getString('range') || interaction.options.getString('khoang_thoi_gian');
   const rawFrom = interaction.options.getString('from')?.trim();
   const rawTo = interaction.options.getString('to')?.trim();
 
