@@ -9,10 +9,16 @@ import {
 
 export const data = new SlashCommandBuilder()
   .setName('setup-panel')
-  .setDescription('Tạo bảng điều khiển Chấm công song ngữ (Việt - Hàn) / 출퇴근 관리 패널 생성')
-  .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild);
+  .setDescription('Mở bảng điều khiển Chấm công song ngữ (Việt - Hàn) / 출퇴근 관리 패널 열기');
 
 export async function execute(interaction) {
+  const isManager = Boolean(
+    interaction.inGuild() &&
+    (
+      interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) ||
+      interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)
+    )
+  );
   const embed = new EmbedBuilder()
     .setTitle('⚔️ GAMEFY OPERATIONS HUB | 작업 관리')
     .setDescription(
@@ -51,6 +57,14 @@ export async function execute(interaction) {
       .setLabel('🎮 Trạng Thái Nick | 계정 현황')
       .setStyle(ButtonStyle.Primary)
   );
+
+  if (!isManager) {
+    return interaction.reply({
+      embeds: [embed],
+      components: [row1, row2],
+      ephemeral: true
+    });
+  }
 
   await interaction.channel.send({
     embeds: [embed],
