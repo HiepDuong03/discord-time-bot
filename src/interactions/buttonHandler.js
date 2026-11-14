@@ -143,78 +143,81 @@ export async function handleButtonInteraction(interaction) {
 
   // 1. NÚT VÀO CA (Kiểm tra Role Member và mở danh sách Nick Game bằng Select Menu)
   if (customId === 'btn_checkin') {
-    await interaction.deferReply({ ephemeral: true });
-
     // Kiểm tra quyền theo Role Member
     if (config.targetWorkerRoleId && member) {
       const hasWorkerRole = member.roles?.cache?.has(config.targetWorkerRoleId);
       const isManager = member.permissions?.has('ManageGuild') || member.permissions?.has('Administrator');
       if (!hasWorkerRole && !isManager) {
-        return interaction.editReply({
+        return interaction.reply({
           content: `⛔ **Chưa có quyền vào ca / 권한 없음:**\n` +
                    `Bạn cần có role **Member** (Nhân viên cày game) để sử dụng hệ thống chấm công!\n` +
                    `Vui lòng liên hệ Quản lý để được cấp role trước khi vào ca.\n` +
-                   `-# 🇰🇷 작업 진행을 위해 관리자에게 Member 역할을 요청하세요.`
+                   `-# 🇰🇷 작업 진행을 위해 관리자에게 Member 역할을 요청하세요.`,
+          ephemeral: true
         });
       }
     }
 
-    const activeShift = await getActiveShift(user.id);
+    const [activeShift, accList] = await Promise.all([
+      getActiveShift(user.id),
+      getAllAccountsTodaySummary()
+    ]);
+
     if (activeShift) {
-      return interaction.editReply({
+      return interaction.reply({
         content: `⚠️ **Bạn đang có ca cày dở dang! / 이미 근무 중입니다:**\n` +
                  `• Nick đang cày: \`[${activeShift.account_code}]\`\n` +
                  `• Giờ vào ca: **${formatTimeInTz(activeShift.check_in)}**\n\n` +
-                 `👉 Vui lòng bấm **[🔴 Hết Ca | 퇴근]** trước khi đổi sang Nick khác!`
+                 `👉 Vui lòng bấm **[🔴 Hết Ca | 퇴근]** trước khi đổi sang Nick khác!`,
+        ephemeral: true
       });
     }
-
-    const accList = await getAllAccountsTodaySummary();
 
     // Nếu chưa có nick nào trong danh mục chính thức, nhắc Quản lý thêm nick
     if (accList.length === 0) {
-      return interaction.editReply({
+      return interaction.reply({
         content: `ℹ️ Chưa có Nick game nào trong danh mục hoạt động.\n` +
                  `👉 Quản lý vui lòng dùng lệnh \`/acc-manage add code:<mã_nick>\` để thêm Nick trước khi nhân viên vào ca!\n` +
-                 `-# 🇰🇷 등록된 계정이 없습니다. 관리자에게 계정 등록(/acc-manage add)을 요청하세요.`
+                 `-# 🇰🇷 등록된 계정이 없습니다. 관리자에게 계정 등록(/acc-manage add)을 요청하세요.`,
+        ephemeral: true
       });
     }
 
-    return interaction.editReply(buildCheckinMenuPayload(accList, 0));
+    return interaction.reply({
+      ...buildCheckinMenuPayload(accList, 0),
+      ephemeral: true
+    });
   }
 
   // 1b. CHUYỂN TRANG MENU VÀO CA (>25 NICK)
   if (customId.startsWith('btn_checkin_page:')) {
-    await interaction.deferUpdate();
     const page = parseInt(customId.split(':')[1], 10) || 0;
     const accList = await getAllAccountsTodaySummary();
     if (accList.length === 0) {
-      return interaction.editReply({
+      return interaction.update({
         content: 'ℹ️ Chưa có Nick game nào trong danh mục hoạt động.',
         embeds: [],
         components: []
       });
     }
-    return interaction.editReply(buildCheckinMenuPayload(accList, page));
+    return interaction.update(buildCheckinMenuPayload(accList, page));
   }
 
   // 2. NÚT HẾT CA (CHECK-OUT / 퇴근)
   if (customId === 'btn_checkout') {
-    await interaction.deferReply({ ephemeral: true });
     const result = await endShift(user.id);
 
     if (!result.success) {
-      return interaction.editReply({
-        content: `⚠️ **Thông báo / 알림:** ${result.message}\n*(현재 진행 중인 근무가 없습니다.)*`
+      return interaction.reply({
+        content: `⚠️ **Thông báo / 알림:** ${result.message}\n*(현재 진행 중인 근무가 없습니다.)*`,
+        ephemeral: true
       });
     }
 
     if (config.onShiftRoleId && member) {
-      try {
-        await member.roles.remove(config.onShiftRoleId);
-      } catch (err) {
+      member.roles.remove(config.onShiftRoleId).catch(err => {
         console.warn('[ROLE WARN] Không thể gỡ role On-Shift:', err.message);
-      }
+      });
     }
 
     const shiftDurationText = formatBilingualMins(result.durationMinutes);
@@ -242,14 +245,14 @@ export async function handleButtonInteraction(interaction) {
       .setFooter({ text: 'Gamefy Base Teams • Shift Completed | 퇴근 완료' })
       .setTimestamp();
 
-    return interaction.editReply({
-      embeds: [embed]
+    return interaction.reply({
+      embeds: [embed],
+      ephemeral: true
     });
   }
 
   // 3. NÚT XEM TIẾN ĐỘ CÁ NHÂN (STATUS / 내 근무)
   if (customId === 'btn_status') {
-    await interaction.deferReply({ ephemeral: true });
     const summary = await getDaySummaryForUser(user.id);
     const totalText = formatBilingualMins(summary.totalMinutes);
     const remainingText = formatBilingualMins(summary.remainingMinutes);
@@ -282,59 +285,45 @@ export async function handleButtonInteraction(interaction) {
       .setFooter({ text: `Chu kỳ làm việc / 일자: ${summary.workDate}` })
       .setTimestamp();
 
-    return interaction.editReply({
-      embeds: [embed]
+    return interaction.reply({
+      embeds: [embed],
+      ephemeral: true
     });
   }
 
   // 4. NÚT XEM TRẠNG THÁI NICK GAME TOÀN TEAM (ACC STATUS / 계정 현황)
   if (customId === 'btn_acc_status') {
-    await interaction.deferReply({ ephemeral: true });
     const result = await buildAccountStatusEmbed();
     if (!result.hasData) {
-      return interaction.editReply({
-        content: result.message
+      return interaction.reply({
+        content: result.message,
+        ephemeral: true
       });
     }
 
-    return interaction.editReply({
-      embeds: [result.embed]
+    return interaction.reply({
+      embeds: [result.embed],
+      ephemeral: true
     });
   }
 
   // 5. NÚT XÁC NHẬN BÀN GIAO CA (HANDOFF CONFIRM)
   if (customId.startsWith('btn_confirm_handoff:')) {
-    await interaction.deferUpdate();
     const targetAccount = customId.split(':')[1];
     const result = await handoffShift(user.id, displayName, targetAccount);
 
     if (!result.success) {
-      return interaction.editReply({
+      return interaction.update({
         content: `⚠️ **Bàn giao không thành công:** ${result.message}`,
         embeds: [],
         components: []
       });
     }
 
-    // Quản lý Discord Roles: Gỡ On-Shift của người cũ, gán cho người mới
-    if (config.onShiftRoleId && interaction.guild) {
-      try {
-        const oldMember = await interaction.guild.members.fetch(result.oldUser.id).catch(() => null);
-        if (oldMember) {
-          await oldMember.roles.remove(config.onShiftRoleId).catch(() => {});
-        }
-        if (member) {
-          await member.roles.add(config.onShiftRoleId).catch(() => {});
-        }
-      } catch (err) {
-        console.warn('[HANDOFF ROLE WARN]', err.message);
-      }
-    }
-
     const checkInTimeStr = formatTimeInTz(result.newShift.checkInTime);
     const oldDurationStr = formatBilingualMins(result.oldUser.durationMinutes);
 
-    // Cập nhật phản hồi cho người nhận ca
+    // Cập nhật phản hồi ngay cho người nhận ca
     const confirmEmbed = new EmbedBuilder()
       .setTitle('⚡ BÀN GIAO CA THÀNH CÔNG | 인수인계 완료')
       .setDescription(
@@ -348,10 +337,20 @@ export async function handleButtonInteraction(interaction) {
       .setFooter({ text: 'Gamefy Base Teams • Shift Handover | 인수인계 완료' })
       .setTimestamp();
 
-    await interaction.editReply({
+    await interaction.update({
       embeds: [confirmEmbed],
       components: []
     });
+
+    // Quản lý Discord Roles: Gỡ On-Shift của người cũ, gán cho người mới (chạy sau khi đã update UI)
+    if (config.onShiftRoleId && interaction.guild) {
+      interaction.guild.members.fetch({ user: result.oldUser.id, time: 1500 })
+        .then(oldMember => oldMember?.roles.remove(config.onShiftRoleId))
+        .catch(() => {});
+      if (member) {
+        member.roles.add(config.onShiftRoleId).catch(() => {});
+      }
+    }
 
     // Gửi thông báo công khai lên Kênh để toàn team & Quản lý nắm
     try {
@@ -401,8 +400,6 @@ export async function handleSelectMenuInteraction(interaction) {
     return interaction.showModal(modal);
   }
 
-  await interaction.deferUpdate();
-
   // 2. Trường hợp chọn nick cụ thể: 'acc:TÊN_ACC'
   const accountCode = selectedValue.startsWith('acc:') ? selectedValue.slice(4) : selectedValue;
   const cleanAccount = normalizeAccountCode(accountCode);
@@ -412,7 +409,7 @@ export async function handleSelectMenuInteraction(interaction) {
 
   if (activeShiftOnAcc) {
     if (activeShiftOnAcc.user_id === user.id) {
-      return interaction.editReply({
+      return interaction.update({
         content: `⚠️ Bạn chính là người đang cày Nick **\`[${cleanAccount}]\`** này rồi!\n*(이미 해당 계정으로 작업 중입니다.)*`,
         embeds: [],
         components: []
@@ -450,7 +447,7 @@ export async function handleSelectMenuInteraction(interaction) {
         .setStyle(ButtonStyle.Secondary)
     );
 
-    return interaction.editReply({
+    return interaction.update({
       embeds: [handoffEmbed],
       components: [handoffRow]
     });
@@ -460,20 +457,18 @@ export async function handleSelectMenuInteraction(interaction) {
   const result = await startShiftWithAccount(user.id, displayName, cleanAccount);
 
   if (!result.success) {
-    return interaction.editReply({
+    return interaction.update({
       content: `⚠️ **Thông báo / 알림:** ${result.message}`,
       embeds: [],
       components: []
     });
   }
 
-  // Gán role On-Shift nếu có
+  // Gán role On-Shift nếu có (chạy bất đồng bộ để không chặn phản hồi UI)
   if (config.onShiftRoleId && member) {
-    try {
-      await member.roles.add(config.onShiftRoleId);
-    } catch (err) {
+    member.roles.add(config.onShiftRoleId).catch(err => {
       console.warn('[ROLE WARN] Không thể gán role On-Shift:', err.message);
-    }
+    });
   }
 
   const checkInTimeStr = formatTimeInTz(result.checkInTime);
@@ -494,7 +489,7 @@ export async function handleSelectMenuInteraction(interaction) {
     .setFooter({ text: 'Gamefy Base Teams • Shift Started | 출근 완료' })
     .setTimestamp();
 
-  return interaction.editReply({
+  return interaction.update({
     embeds: [embed],
     components: []
   });
@@ -505,8 +500,6 @@ export async function handleSelectMenuInteraction(interaction) {
  */
 export async function handleModalInteraction(interaction) {
   if (interaction.customId !== 'modal_checkin') return;
-
-  await interaction.deferReply({ ephemeral: true });
 
   const { user, member } = interaction;
   const displayName = member?.displayName || user.username;
@@ -529,26 +522,26 @@ export async function handleModalInteraction(interaction) {
           .setStyle(ButtonStyle.Secondary)
       );
 
-      return interaction.editReply({
+      return interaction.reply({
         content: `⛔ **TRÙNG NICK GAME / 계정 중복 경고:**\n` +
                  `${result.message}\n\n` +
                  `👉 Nếu đồng đội quên chốt ca, bạn có thể bấm **[Nhận Bàn Giao Ca]** bên dưới:`,
-        components: [handoffRow]
+        components: [handoffRow],
+        ephemeral: true
       });
     }
 
-    return interaction.editReply({
-      content: `⚠️ **Thông báo / 알림:** ${result.message}`
+    return interaction.reply({
+      content: `⚠️ **Thông báo / 알림:** ${result.message}`,
+      ephemeral: true
     });
   }
 
-  // Gán role On-Shift nếu có
+  // Gán role On-Shift nếu có (chạy bất đồng bộ)
   if (config.onShiftRoleId && member) {
-    try {
-      await member.roles.add(config.onShiftRoleId);
-    } catch (err) {
+    member.roles.add(config.onShiftRoleId).catch(err => {
       console.warn('[ROLE WARN] Không thể gán role On-Shift:', err.message);
-    }
+    });
   }
 
   const checkInTimeStr = formatTimeInTz(result.checkInTime);
@@ -571,7 +564,8 @@ export async function handleModalInteraction(interaction) {
     .setFooter({ text: 'Gamefy Base Teams • Shift Started | 출근 완료' })
     .setTimestamp();
 
-  return interaction.editReply({
-    embeds: [embed]
+  return interaction.reply({
+    embeds: [embed],
+    ephemeral: true
   });
 }

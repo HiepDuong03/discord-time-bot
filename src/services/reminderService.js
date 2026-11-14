@@ -226,7 +226,7 @@ export function initReminderCron(client) {
   // 06:00 sáng mỗi ngày: Tự động tách ca qua ngày mới (Overnight Shift Auto-Split)
   cron.schedule('0 6 * * *', () => {
     console.log('[CRON] 06:00 AM - Tự động chốt ca ngày cũ & mở nối tiếp ca ngày mới...');
-    splitOvernightActiveShifts().catch(err => console.error('[CRON 06:00 ERROR]', err));
+    splitOvernightActiveShifts(new Date(), true).catch(err => console.error('[CRON 06:00 ERROR]', err));
   }, { timezone: config.timezone });
 
   // 18:00 mỗi ngày: Nhắc nhở cá nhân

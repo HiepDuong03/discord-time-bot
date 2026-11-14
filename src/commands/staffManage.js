@@ -73,20 +73,22 @@ export async function autocomplete(interaction) {
 
 export async function execute(interaction) {
   const subcommand = interaction.options.getSubcommand();
-  await interaction.deferReply({ ephemeral: false });
 
   if (subcommand === 'add') {
     const targetUser = interaction.options.getUser('user');
     const targetHours = interaction.options.getNumber('target') || config.dailyTargetHours;
 
     if (targetHours <= 0 || targetHours > 24) {
-      return interaction.editReply({
-        content: '❌ Chỉ tiêu giờ/ngày phải nằm trong khoảng `0.5` đến `24` giờ!'
+      return interaction.reply({
+        content: '❌ Chỉ tiêu giờ/ngày phải nằm trong khoảng `0.5` đến `24` giờ!',
+        ephemeral: true
       });
     }
 
     const guild = interaction.guild;
-    const guildMember = guild ? await guild.members.fetch(targetUser.id).catch(() => null) : null;
+    const guildMember = guild
+      ? (guild.members.cache.get(targetUser.id) || await guild.members.fetch({ user: targetUser.id, time: 1200 }).catch(() => null))
+      : null;
     const displayName = guildMember?.displayName || targetUser.globalName || targetUser.username;
 
     await upsertStaffMember(targetUser.id, displayName, targetHours);
@@ -128,20 +130,23 @@ export async function execute(interaction) {
       .setFooter({ text: 'Gamefy Base Teams • Staff Management | 직원 관리' })
       .setTimestamp();
 
-    return interaction.editReply({ embeds: [embed] });
+    return interaction.reply({ embeds: [embed] });
   }
 
   if (subcommand === 'remove') {
     const targetUser = interaction.options.getUser('user');
     const activeShift = await getActiveShift(targetUser.id);
     if (activeShift) {
-      return interaction.editReply({
-        content: `❌ Không thể gỡ <@${targetUser.id}> vì nhân sự đang trong ca làm trên Nick \`[${activeShift.account_code}]\`.\n👉 Hãy dùng \`/force-checkout\` để chốt ca trước!`
+      return interaction.reply({
+        content: `❌ Không thể gỡ <@${targetUser.id}> vì nhân sự đang trong ca làm trên Nick \`[${activeShift.account_code}]\`.\n👉 Hãy dùng \`/force-checkout\` để chốt ca trước!`,
+        ephemeral: true
       });
     }
 
     const guild = interaction.guild;
-    const guildMember = guild ? await guild.members.fetch(targetUser.id).catch(() => null) : null;
+    const guildMember = guild
+      ? (guild.members.cache.get(targetUser.id) || await guild.members.fetch({ user: targetUser.id, time: 1200 }).catch(() => null))
+      : null;
 
     let roleLine = '• **Role Discord:** Không tìm thấy thành viên hoặc không cấu hình Role.';
     let color = '#ED4245';
@@ -182,7 +187,7 @@ export async function execute(interaction) {
       .setFooter({ text: 'Gamefy Base Teams • Staff Management | 직원 관리' })
       .setTimestamp();
 
-    return interaction.editReply({ embeds: [embed] });
+    return interaction.reply({ embeds: [embed] });
   }
 
   if (subcommand === 'list') {
@@ -192,7 +197,7 @@ export async function execute(interaction) {
     const roleMemberIds = new Set();
     if (config.targetWorkerRoleId && interaction.guild) {
       try {
-        await interaction.guild.members.fetch();
+        await interaction.guild.members.fetch({ time: 1200 }).catch(() => null);
         const role = interaction.guild.roles.cache.get(config.targetWorkerRoleId);
         if (role) {
           role.members.forEach(m => roleMemberIds.add(m.id));
@@ -204,8 +209,9 @@ export async function execute(interaction) {
 
     const combinedIds = new Set([...dbMap.keys(), ...roleMemberIds]);
     if (combinedIds.size === 0) {
-      return interaction.editReply({
-        content: '📂 Danh sách nhân viên hiện đang trống. Dùng `/staff-manage add` để thêm nhân viên mới!'
+      return interaction.reply({
+        content: '📂 Danh sách nhân viên hiện đang trống. Dùng `/staff-manage add` để thêm nhân viên mới!',
+        ephemeral: true
       });
     }
 
@@ -249,6 +255,6 @@ export async function execute(interaction) {
       .setFooter({ text: 'Gamefy Base Teams • Staff Management | 직원 관리' })
       .setTimestamp();
 
-    return interaction.editReply({ embeds: [embed] });
+    return interaction.reply({ embeds: [embed] });
   }
 }

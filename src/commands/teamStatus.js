@@ -24,8 +24,6 @@ export const data = new SlashCommandBuilder()
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild);
 
 export async function execute(interaction) {
-  await interaction.deferReply({ ephemeral: true });
-
   const workDate = getWorkDate();
   const teamData = await getTeamTodaySummary(workDate);
   const hoursLeftBeforeCutoff = getHoursUntilCutoff().toFixed(1);
@@ -35,7 +33,7 @@ export async function execute(interaction) {
 
   if (guild && config.targetWorkerRoleId) {
     try {
-      await guild.members.fetch();
+      await guild.members.fetch({ time: 1200 }).catch(() => null);
       const role = guild.roles.cache.get(config.targetWorkerRoleId);
       if (role) {
         targetMembers = Array.from(role.members.values());
@@ -132,7 +130,8 @@ export async function execute(interaction) {
   embed.setFooter({ text: 'Gamefy Base Teams • Member Role Live Roster | 팀 인원 현황' });
   embed.setTimestamp();
 
-  return interaction.editReply({
-    embeds: [embed]
+  return interaction.reply({
+    embeds: [embed],
+    ephemeral: true
   });
 }

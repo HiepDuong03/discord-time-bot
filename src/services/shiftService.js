@@ -24,20 +24,34 @@ export function getWorkDate(targetDate = new Date()) {
   return getWorkDateIso(targetDate, config.cutoffHour, config.timezone);
 }
 
+let lastSplitCheckDate = null;
+let lastSplitCheckMs = 0;
+
 /**
  * Tự động cắt các ca đang ACTIVE vắt qua mốc 06:00 sáng:
  * - Chốt ca ngày cũ tại đúng mốc 06:00 sáng (tối đa MAX_SHIFT_MINUTES).
  * - Nếu ca vẫn đang trong giới hạn hoạt động bình thường (< 14h và liền kề ngày hôm qua),
  *   tự động mở nối tiếp ca mới từ 06:00 sáng cho ngày làm việc hôm nay.
  */
-export async function splitOvernightActiveShifts(now = new Date()) {
+export async function splitOvernightActiveShifts(now = new Date(), force = false) {
   const currentWorkDate = getWorkDate(now);
+  const nowMs = Date.now();
+  if (!force && now.getTime() === nowMs && lastSplitCheckDate === currentWorkDate && (nowMs - lastSplitCheckMs) < 60000) {
+    return 0;
+  }
+
   const res = await db.execute({
     sql: `SELECT * FROM shifts WHERE status = 'ACTIVE' AND work_date < ?`,
     args: [currentWorkDate]
   });
 
-  if (res.rows.length === 0) return 0;
+  if (res.rows.length === 0) {
+    if (now.getTime() === nowMs) {
+      lastSplitCheckDate = currentWorkDate;
+      lastSplitCheckMs = nowMs;
+    }
+    return 0;
+  }
 
   const cutoffHourPad = String(config.cutoffHour).padStart(2, '0');
   const yesterdayWorkDate = addDaysToIso(currentWorkDate, -1);
@@ -136,11 +150,14 @@ export async function startShiftWithAccount(discordId, displayName, accountCode,
   const cleanAccount = normalizeAccountCode(accountCode);
 
   await splitOvernightActiveShifts();
-  await registerOrUpdateUser(discordId, displayName);
-  await registerOrUpdateAccount(cleanAccount);
+  const [, , userActiveShift, accountActiveShift] = await Promise.all([
+    registerOrUpdateUser(discordId, displayName),
+    registerOrUpdateAccount(cleanAccount),
+    getActiveShift(discordId),
+    getActiveShiftByAccount(cleanAccount)
+  ]);
 
   // 1. Kiểm tra chính Member này đã có ca đang chạy chưa
-  const userActiveShift = await getActiveShift(discordId);
   if (userActiveShift) {
     return {
       success: false,
@@ -150,7 +167,6 @@ export async function startShiftWithAccount(discordId, displayName, accountCode,
   }
 
   // 2. Chống tranh Nick: Kiểm tra xem Nick này đã có ai đang cày chưa
-  const accountActiveShift = await getActiveShiftByAccount(cleanAccount);
   if (accountActiveShift) {
     return {
       success: false,
@@ -224,8 +240,10 @@ export async function endShift(discordId) {
     args: [checkOutIso, durationMinutes, activeShift.id]
   });
 
-  const memberSummary = await getDaySummaryForUser(discordId, activeShift.work_date);
-  const accountSummary = await getAccountDailySummary(activeShift.account_code, activeShift.work_date);
+  const [memberSummary, accountSummary] = await Promise.all([
+    getDaySummaryForUser(discordId, activeShift.work_date),
+    getAccountDailySummary(activeShift.account_code, activeShift.work_date)
+  ]);
   const accountTargetMinutes = Math.round(accountSummary.targetHours * 60);
 
   return {
@@ -301,22 +319,22 @@ export async function forceReleaseAccount(accountCode, leaderName, reason) {
  */
 export async function getDaySummaryForUser(discordId, workDate = getWorkDate()) {
   await splitOvernightActiveShifts();
-  const userRes = await db.execute({
-    sql: 'SELECT daily_target_hours FROM users WHERE discord_id = ?',
-    args: [discordId]
-  });
+  const [userRes, shiftRes, activeShift] = await Promise.all([
+    db.execute({
+      sql: 'SELECT daily_target_hours FROM users WHERE discord_id = ?',
+      args: [discordId]
+    }),
+    db.execute({
+      sql: `SELECT COALESCE(SUM(duration_minutes), 0) as total_minutes
+            FROM shifts
+            WHERE user_id = ? AND work_date = ? AND status IN ('COMPLETED', 'ADJUSTED')`,
+      args: [discordId, workDate]
+    }),
+    getActiveShift(discordId)
+  ]);
   const user = userRes.rows[0];
   const targetHours = user?.daily_target_hours ? Number(user.daily_target_hours) : config.dailyTargetHours;
-
-  const shiftRes = await db.execute({
-    sql: `SELECT COALESCE(SUM(duration_minutes), 0) as total_minutes
-          FROM shifts
-          WHERE user_id = ? AND work_date = ? AND status IN ('COMPLETED', 'ADJUSTED')`,
-    args: [discordId, workDate]
-  });
   const totalMinutes = Number(shiftRes.rows[0]?.total_minutes || 0);
-
-  const activeShift = await getActiveShift(discordId);
   let activeMinutes = 0;
   let activeAccount = null;
   if (activeShift && activeShift.work_date === workDate) {
@@ -348,22 +366,22 @@ export async function getDaySummaryForUser(discordId, workDate = getWorkDate()) 
 export async function getAccountDailySummary(accountCode, workDate = getWorkDate()) {
   await splitOvernightActiveShifts();
   const cleanCode = normalizeAccountCode(accountCode);
-  const accRes = await db.execute({
-    sql: 'SELECT daily_target_hours FROM accounts WHERE account_code = ?',
-    args: [cleanCode]
-  });
+  const [accRes, sumRes, activeShift] = await Promise.all([
+    db.execute({
+      sql: 'SELECT daily_target_hours FROM accounts WHERE account_code = ?',
+      args: [cleanCode]
+    }),
+    db.execute({
+      sql: `SELECT COALESCE(SUM(duration_minutes), 0) as total_minutes
+            FROM shifts
+            WHERE account_code = ? AND work_date = ? AND status IN ('COMPLETED', 'ADJUSTED')`,
+      args: [cleanCode, workDate]
+    }),
+    getActiveShiftByAccount(cleanCode)
+  ]);
   const acc = accRes.rows[0];
   const targetHours = acc?.daily_target_hours ? Number(acc.daily_target_hours) : 8.0;
-
-  const sumRes = await db.execute({
-    sql: `SELECT COALESCE(SUM(duration_minutes), 0) as total_minutes
-          FROM shifts
-          WHERE account_code = ? AND work_date = ? AND status IN ('COMPLETED', 'ADJUSTED')`,
-    args: [cleanCode, workDate]
-  });
   const completedMinutes = Number(sumRes.rows[0]?.total_minutes || 0);
-
-  const activeShift = await getActiveShiftByAccount(cleanCode);
   let activeMinutes = 0;
   let activeFarmerName = null;
   let activeFarmerId = null;
@@ -639,26 +657,67 @@ export async function getAllStaffMembers() {
  */
 export async function getTeamTodaySummary(workDate = getWorkDate()) {
   await splitOvernightActiveShifts();
-  const usersRes = await db.execute({
-    sql: `SELECT discord_id, COALESCE(MAX(name_from_users), discord_id) AS display_name
-          FROM (
-            SELECT discord_id, display_name AS name_from_users FROM users
-            UNION ALL
-            SELECT DISTINCT user_id AS discord_id, NULL AS name_from_users FROM shifts WHERE work_date = ?
-          )
-          GROUP BY discord_id`,
-    args: [workDate]
-  });
+  const sql = `
+    SELECT
+      roster.discord_id,
+      COALESCE(u.display_name, roster.discord_id) AS display_name,
+      u.daily_target_hours,
+      COALESCE(cs.completed_minutes, 0) AS completed_minutes,
+      act.id AS active_shift_id,
+      act.account_code AS active_account,
+      act.check_in AS active_check_in,
+      act.work_date AS active_work_date
+    FROM (
+      SELECT discord_id FROM users
+      UNION
+      SELECT DISTINCT user_id AS discord_id FROM shifts WHERE work_date = ?
+    ) roster
+    LEFT JOIN users u ON roster.discord_id = u.discord_id
+    LEFT JOIN (
+      SELECT user_id, SUM(duration_minutes) AS completed_minutes
+      FROM shifts
+      WHERE work_date = ? AND status IN ('COMPLETED', 'ADJUSTED')
+      GROUP BY user_id
+    ) cs ON roster.discord_id = cs.user_id
+    LEFT JOIN (
+      SELECT id, user_id, account_code, check_in, work_date
+      FROM shifts
+      WHERE status = 'ACTIVE'
+    ) act ON roster.discord_id = act.user_id
+  `;
+  const res = await db.execute({ sql, args: [workDate, workDate] });
+  const now = Date.now();
 
-  const team = [];
-  for (const user of usersRes.rows) {
-    const summary = await getDaySummaryForUser(user.discord_id, workDate);
-    team.push({
-      discordId: user.discord_id,
-      displayName: user.display_name,
-      ...summary
-    });
-  }
+  const team = res.rows.map(row => {
+    const targetHours = row.daily_target_hours ? Number(row.daily_target_hours) : config.dailyTargetHours;
+    const completedMinutes = Number(row.completed_minutes || 0);
+    let activeMinutes = 0;
+    let activeAccount = null;
+
+    if (row.active_shift_id && row.active_work_date === workDate) {
+      const diffMs = now - new Date(row.active_check_in).getTime();
+      activeMinutes = Math.round(diffMs / 60000);
+      activeAccount = row.active_account;
+    }
+
+    const grandTotalMinutes = completedMinutes + activeMinutes;
+    const targetMinutes = Math.round(targetHours * 60);
+    const remainingMinutes = Math.max(0, targetMinutes - grandTotalMinutes);
+
+    return {
+      discordId: row.discord_id,
+      displayName: row.display_name,
+      workDate,
+      targetHours,
+      completedMinutes,
+      activeMinutes,
+      activeAccount,
+      totalMinutes: grandTotalMinutes,
+      remainingMinutes,
+      isAchieved: grandTotalMinutes >= targetMinutes,
+      hasActiveShift: !!row.active_shift_id
+    };
+  });
 
   return team.sort((a, b) => b.totalMinutes - a.totalMinutes);
 }
@@ -710,11 +769,14 @@ export async function adjustShiftTime(userId, minutesChange, reason, adjustedBy,
 export async function handoffShift(newUserId, newDisplayName, accountCode) {
   const cleanAccount = normalizeAccountCode(accountCode);
 
-  await registerOrUpdateUser(newUserId, newDisplayName);
-  await registerOrUpdateAccount(cleanAccount);
+  const [, , userActive, activeShift] = await Promise.all([
+    registerOrUpdateUser(newUserId, newDisplayName),
+    registerOrUpdateAccount(cleanAccount),
+    getActiveShift(newUserId),
+    getActiveShiftByAccount(cleanAccount)
+  ]);
 
   // Kiểm tra xem chính người mới có đang dở ca nào không
-  const userActive = await getActiveShift(newUserId);
   if (userActive) {
     return {
       success: false,
@@ -722,7 +784,6 @@ export async function handoffShift(newUserId, newDisplayName, accountCode) {
     };
   }
 
-  const activeShift = await getActiveShiftByAccount(cleanAccount);
   if (!activeShift) {
     // Nếu nick đã trống rồi thì vào ca bình thường
     return await startShiftWithAccount(newUserId, newDisplayName, cleanAccount);

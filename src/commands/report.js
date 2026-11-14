@@ -38,8 +38,6 @@ export async function execute(interaction) {
     targetDate = parsed;
   }
 
-  await interaction.deferReply();
-
   try {
     let teamData = await getTeamTodaySummary(targetDate);
     const guild = interaction.guild;
@@ -48,7 +46,7 @@ export async function execute(interaction) {
     // chỉ giữ lại những thành viên thực tế có role Member (hoặc có ca làm trong ngày)
     if (guild && config.targetWorkerRoleId) {
       try {
-        await guild.members.fetch();
+        await guild.members.fetch({ time: 1200 }).catch(() => null);
         const role = guild.roles.cache.get(config.targetWorkerRoleId);
         if (role) {
           const validMemberIds = new Set(role.members.keys());
@@ -60,8 +58,9 @@ export async function execute(interaction) {
     }
 
     if (teamData.length === 0) {
-      return interaction.editReply({
-        content: `ℹ️ Chưa có dữ liệu chấm công nào cho ngày **${targetDate}**.\n*(해당 일자의 근무 기록이 없습니다.)*`
+      return interaction.reply({
+        content: `ℹ️ Chưa có dữ liệu chấm công nào cho ngày **${targetDate}**.\n*(해당 일자의 근무 기록이 없습니다.)*`,
+        ephemeral: true
       });
     }
 
@@ -93,11 +92,12 @@ export async function execute(interaction) {
       .setFooter({ text: 'Gamefy Base Teams • Performance Analytics | 근무 실적 분석' })
       .setTimestamp();
 
-    return interaction.editReply({ embeds: [embed] });
+    return interaction.reply({ embeds: [embed] });
   } catch (error) {
     console.error('[REPORT ERROR]', error);
-    return interaction.editReply({
-      content: `❌ Lỗi khi vẽ biểu đồ / 오류 발생: ${error.message}`
+    return interaction.reply({
+      content: `❌ Lỗi khi vẽ biểu đồ / 오류 발생: ${error.message}`,
+      ephemeral: true
     });
   }
 }

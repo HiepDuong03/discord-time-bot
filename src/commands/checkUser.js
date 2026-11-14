@@ -46,18 +46,16 @@ export async function execute(interaction) {
     targetDate = parsed;
   }
 
-  await interaction.deferReply({ ephemeral: true });
-
-  const summary = await getDaySummaryForUser(targetUser.id, targetDate);
-
-  // Lấy danh sách các ca làm của user trong ngày
-  const shiftsRes = await db.execute({
-    sql: `SELECT id, account_code, check_in, check_out, duration_minutes, status, note
-          FROM shifts
-          WHERE user_id = ? AND work_date = ?
-          ORDER BY check_in ASC`,
-    args: [targetUser.id, targetDate]
-  });
+  const [summary, shiftsRes] = await Promise.all([
+    getDaySummaryForUser(targetUser.id, targetDate),
+    db.execute({
+      sql: `SELECT id, account_code, check_in, check_out, duration_minutes, status, note
+            FROM shifts
+            WHERE user_id = ? AND work_date = ?
+            ORDER BY check_in ASC`,
+      args: [targetUser.id, targetDate]
+    })
+  ]);
   const shifts = shiftsRes.rows;
 
   const totalStr = formatUserMins(summary.totalMinutes);
@@ -104,7 +102,8 @@ export async function execute(interaction) {
     .setFooter({ text: 'Gamefy Base Teams • Employee Audit Service | 개인 감사' })
     .setTimestamp();
 
-  return interaction.editReply({
-    embeds: [embed]
+  return interaction.reply({
+    embeds: [embed],
+    ephemeral: true
   });
 }

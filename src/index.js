@@ -1,5 +1,6 @@
 import { 
   Client, 
+  Events,
   GatewayIntentBits, 
   Collection, 
   REST, 
@@ -10,6 +11,7 @@ import { config, validateConfig } from './config/env.js';
 import db, { initDatabase } from './database/db.js';
 import { handleButtonInteraction, handleModalInteraction, handleSelectMenuInteraction } from './interactions/buttonHandler.js';
 import { initReminderCron } from './services/reminderService.js';
+import { splitOvernightActiveShifts } from './services/shiftService.js';
 
 // Import các lệnh Slash
 import * as panelCommand from './commands/panel.js';
@@ -45,11 +47,26 @@ const client = new Client({
 // Khởi tạo HTTP Health Check Server (Dành cho Cloud Hosting / UptimeRobot)
 const PORT = process.env.PORT || 8080;
 const httpServer = http.createServer((req, res) => {
+  // Giữ ấm kết nối HTTP/TLS tới Turso mỗi lần UptimeRobot ping để các lệnh Discord phản hồi tức thì (<200ms)
+  db.execute('SELECT 1').catch(() => {});
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
   res.end('AURA Time Tracking Discord Bot is Online 24/7!');
 });
 httpServer.listen(PORT, () => {
   console.log(`[HTTP] Health check server đang lắng nghe tại cổng: ${PORT}`);
+});
+
+// Định kỳ giữ ấm kết nối Turso mỗi 3 phút
+setInterval(() => {
+  db.execute('SELECT 1').catch(() => {});
+}, 3 * 60 * 1000).unref();
+
+client.on('error', (err) => {
+  console.error('[DISCORD CLIENT ERROR]', err);
+});
+
+client.rest.on('rateLimited', (info) => {
+  console.warn(`[DISCORD RATE LIMIT] route=${info.route} method=${info.method} retryAfter=${info.retryAfter}ms global=${info.global}`);
 });
 
 // Bộ sưu tập lệnh
@@ -104,12 +121,13 @@ async function registerSlashCommands() {
 }
 
 // Sự kiện khi Bot online
-client.once('ready', async () => {
+client.once(Events.ClientReady, async () => {
   console.log(`\n✅ Bot đã đăng nhập thành công với tên: ${client.user.tag}`);
   console.log(`⚡ Mốc chốt ngày: ${config.cutoffHour}:00 sáng | Chỉ tiêu: ${config.dailyTargetHours}h/ngày`);
   
   // Khởi tạo và đồng bộ Database Cloud
   await initDatabase();
+  await splitOvernightActiveShifts(new Date(), true).catch(() => {});
 
   // Đăng ký slash commands
   await registerSlashCommands();
@@ -160,7 +178,9 @@ client.on('interactionCreate', async (interaction) => {
   } catch (error) {
     console.error(`[INTERACTION ERROR] Lỗi tại tương tác ${interaction.id}:`, error);
     const replyContent = { content: '❌ Đã xảy ra lỗi nội bộ khi xử lý thao tác này!', ephemeral: true };
-    if (interaction.replied || interaction.deferred) {
+    if (interaction.deferred && !interaction.replied) {
+      await interaction.editReply({ content: replyContent.content }).catch(() => {});
+    } else if (interaction.replied) {
       await interaction.followUp(replyContent).catch(() => {});
     } else {
       await interaction.reply(replyContent).catch(() => {});

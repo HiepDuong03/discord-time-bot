@@ -81,8 +81,6 @@ export async function execute(interaction) {
     });
   }
 
-  await interaction.deferReply({ ephemeral: false });
-
   try {
     let result;
     let targetName = '';
@@ -97,17 +95,17 @@ export async function execute(interaction) {
     }
 
     if (!result.success) {
-      return interaction.editReply({
-        content: `⚠️ **Thông báo / 알림:** ${result.message}`
+      return interaction.reply({
+        content: `⚠️ **Thông báo / 알림:** ${result.message}`,
+        ephemeral: true
       });
     }
 
     // Gỡ role On-Shift cho user vừa bị chốt ca (cả khi chọn user lẫn chọn account)
     if (config.onShiftRoleId && interaction.guild && result.userId) {
-      try {
-        const gm = await interaction.guild.members.fetch(result.userId);
-        if (gm) await gm.roles.remove(config.onShiftRoleId);
-      } catch {}
+      interaction.guild.members.fetch(result.userId)
+        .then(gm => gm?.roles.remove(config.onShiftRoleId))
+        .catch(() => {});
     }
 
     const embed = new EmbedBuilder()
@@ -125,11 +123,12 @@ export async function execute(interaction) {
       .setFooter({ text: 'Gamefy Base Teams • Force Checkout Service | 강제 퇴근 관리' })
       .setTimestamp();
 
-    return interaction.editReply({ embeds: [embed] });
+    return interaction.reply({ embeds: [embed] });
   } catch (error) {
     console.error('[FORCE CHECKOUT ERROR]', error);
-    return interaction.editReply({
-      content: `❌ Lỗi khi cưỡng chế kết thúc ca / 오류 발생: ${error.message}`
+    return interaction.reply({
+      content: `❌ Lỗi khi cưỡng chế kết thúc ca / 오류 발생: ${error.message}`,
+      ephemeral: true
     });
   }
 }

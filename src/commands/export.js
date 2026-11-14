@@ -133,14 +133,13 @@ export async function execute(interaction) {
     toDate = todayIso;
   }
 
-  await interaction.deferReply({ ephemeral: false });
-
   try {
     const result = await exportTimesheetToExcel(fromDate, toDate);
 
     if (!result.hasData) {
-      return interaction.editReply({
-        content: `⚠️ Không tìm thấy dữ liệu chấm công nào từ ngày **${fromDate}** đến **${toDate}**.\n*(해당 기간의 근무 기록이 없습니다.)*`
+      return interaction.reply({
+        content: `⚠️ Không tìm thấy dữ liệu chấm công nào từ ngày **${fromDate}** đến **${toDate}**.\n*(해당 기간의 근무 기록이 없습니다.)*`,
+        ephemeral: true
       });
     }
 
@@ -206,14 +205,15 @@ export async function execute(interaction) {
     embed.setFooter({ text: 'AURA Time Tracking • Excel Audit & Payroll Service | 급여 정산 및 감사' });
     embed.setTimestamp();
 
-    return interaction.editReply({
+    return interaction.reply({
       embeds: [embed],
       files: [attachment]
     });
   } catch (error) {
     console.error('[EXPORT ERROR]', error);
-    return interaction.editReply({
-      content: `❌ Có lỗi xảy ra khi tạo file Excel: ${error.message}`
+    return interaction.reply({
+      content: `❌ Có lỗi xảy ra khi tạo file Excel: ${error.message}`,
+      ephemeral: true
     });
   }
 }

@@ -97,13 +97,13 @@ export async function buildAccountStatusEmbed(workDate = getWorkDate()) {
 }
 
 export async function execute(interaction) {
-  await interaction.deferReply();
   const result = await buildAccountStatusEmbed();
   if (!result.hasData) {
-    return interaction.editReply({
-      content: result.message
+    return interaction.reply({
+      content: result.message,
+      ephemeral: true
     });
   }
 
-  return interaction.editReply({ embeds: [result.embed] });
+  return interaction.reply({ embeds: [result.embed] });
 }
