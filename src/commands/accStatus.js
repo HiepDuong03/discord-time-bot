@@ -1,12 +1,20 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import { getAllAccountsTodaySummary, getWorkDate } from '../services/shiftService.js';
 import { getHoursUntilCutoff } from '../services/reminderService.js';
+import { createMiniBar } from '../utils/formatUtils.js';
 
-function createMiniBar(completedMinutes, targetHours = 8.0) {
-  const targetMinutes = targetHours * 60;
-  const ratio = Math.min(1, Math.max(0, completedMinutes / targetMinutes));
-  const filled = Math.round(ratio * 5);
-  return '▰'.repeat(filled) + '▱'.repeat(5 - filled);
+function joinFieldLines(lines, maxLen = 1020) {
+  let out = '';
+  let hidden = 0;
+  for (const line of lines) {
+    const next = out ? `${out}\n${line}` : line;
+    if (next.length > maxLen - 28) {
+      hidden++;
+    } else {
+      out = next;
+    }
+  }
+  return hidden > 0 ? `${out}\n*...và ${hidden} nick khác.*` : out;
 }
 
 export const data = new SlashCommandBuilder()
@@ -54,28 +62,28 @@ export async function buildAccountStatusEmbed(workDate = getWorkDate()) {
     .setDescription(
       `📅 **Chu kỳ / 일자:** \`${workDate}\`  •  ⏰ **Hạn chốt ca / 마감:** còn \`${hoursLeft}h\` (익일 06:00)\n` +
       `📊 **Tổng quan / 진행 현황:** **${activeAccs.length}** Đang cày (진행)  |  **${deficitAccs.length}** Đang trống (대기)  |  **${achievedAccs.length}** Đạt SLA (달성)\n` +
-      `-# 🎯 Tiêu chuẩn / 목표: 8.0h/nick/ngày • 🇰🇷 일일 계정 목표 8.0시간`
+      `-# 🎯 Tiêu chuẩn mặc định / 기본 목표: 8.0h/nick/ngày • 🇰🇷 일일 계정 목표`
     )
     .setColor('#5865F2');
 
   if (activeAccs.length > 0) {
     embed.addFields({
       name: `🟢 ĐANG CÓ NGƯỜI CÀY / 작업 진행 중 (${activeAccs.length} Nick / 개)`,
-      value: activeAccs.join('\n')
+      value: joinFieldLines(activeAccs)
     });
   }
 
   if (deficitAccs.length > 0) {
     embed.addFields({
       name: `⚪ ĐANG TRỐNG - CẦN CÀY / 작업 대기 (${deficitAccs.length} Nick / 개)`,
-      value: deficitAccs.join('\n')
+      value: joinFieldLines(deficitAccs)
     });
   }
 
   if (achievedAccs.length > 0) {
     embed.addFields({
       name: `🌟 ĐÃ HOÀN THÀNH SLA / 목표 달성 완료 (${achievedAccs.length} Nick / 개)`,
-      value: achievedAccs.join('\n')
+      value: joinFieldLines(achievedAccs)
     });
   }
 
@@ -89,13 +97,13 @@ export async function buildAccountStatusEmbed(workDate = getWorkDate()) {
 }
 
 export async function execute(interaction) {
+  await interaction.deferReply();
   const result = await buildAccountStatusEmbed();
   if (!result.hasData) {
-    return interaction.reply({
-      content: result.message,
-      ephemeral: true
+    return interaction.editReply({
+      content: result.message
     });
   }
 
-  return interaction.reply({ embeds: [result.embed] });
+  return interaction.editReply({ embeds: [result.embed] });
 }

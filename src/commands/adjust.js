@@ -92,6 +92,8 @@ export async function execute(interaction) {
     });
   }
 
+  await interaction.deferReply({ ephemeral: false });
+
   try {
     const memberObj = interaction.guild?.members?.cache?.get(targetUser.id);
     const displayName = memberObj?.displayName || targetUser.globalName || targetUser.username;
@@ -115,12 +117,11 @@ export async function execute(interaction) {
       .setFooter({ text: 'Gamefy Base Teams • Time Adjustment | 근무 조정' })
       .setTimestamp();
 
-    return interaction.reply({ embeds: [embed] });
+    return interaction.editReply({ embeds: [embed] });
   } catch (error) {
     console.error('[ADJUST ERROR]', error);
-    return interaction.reply({
-      content: `❌ Lỗi khi điều chỉnh giờ / 오류 발생: ${error.message}`,
-      ephemeral: true
+    return interaction.editReply({
+      content: `❌ Lỗi khi điều chỉnh giờ / 오류 발생: ${error.message}`
     });
   }
 }

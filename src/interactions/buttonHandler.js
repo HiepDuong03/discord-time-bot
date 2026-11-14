@@ -18,29 +18,92 @@ import {
   getActiveShift,
   getActiveShiftByAccount,
   handoffShift,
-  normalizeAccountCode,
-  getWorkDate
+  normalizeAccountCode
 } from '../services/shiftService.js';
 import { getHoursUntilCutoff } from '../services/reminderService.js';
 import { buildAccountStatusEmbed } from '../commands/accStatus.js';
 import { config } from '../config/env.js';
+import { formatTimeInTz } from '../utils/dateUtils.js';
+import { formatMinutes, createProgressBar } from '../utils/formatUtils.js';
 
-function formatMinutes(minutes) {
-  const m = Math.max(0, Math.round(minutes));
-  const hours = Math.floor(m / 60);
-  const remainingMins = m % 60;
-  const decimalHours = (m / 60).toFixed(2);
+const formatBilingualMins = (m) => formatMinutes(m, { bilingualUnderHour: true });
+const CHECKIN_PAGE_SIZE = 25;
 
-  if (hours === 0) {
-    return `${remainingMins} phút / 분 (${decimalHours}h)`;
+function buildCheckinMenuPayload(accList, page = 0) {
+  const totalPages = Math.max(1, Math.ceil(accList.length / CHECKIN_PAGE_SIZE));
+  const safePage = Math.min(Math.max(0, page), totalPages - 1);
+  const start = safePage * CHECKIN_PAGE_SIZE;
+  const displayList = accList.slice(start, start + CHECKIN_PAGE_SIZE);
+
+  const selectMenu = new StringSelectMenuBuilder()
+    .setCustomId('select_checkin_account')
+    .setPlaceholder(
+      totalPages > 1
+        ? `🎮 Chọn Nick game (Trang ${safePage + 1}/${totalPages})...`
+        : '🎮 Chọn Nick game bạn muốn cày / 계정을 선택하세요...'
+    );
+
+  const options = displayList.map(acc => {
+    const totalH = (acc.totalMinutes / 60).toFixed(1);
+    const targetH = Number(acc.targetHours || config.dailyTargetHours).toFixed(1);
+    if (acc.hasActiveShift) {
+      return new StringSelectMenuOptionBuilder()
+        .setLabel(`Nick [${acc.accountCode}] (${totalH}h / ${targetH}h)`)
+        .setValue(`acc:${acc.accountCode}`)
+        .setDescription(`🔴 Có người cày: ${acc.activeFarmerName.slice(0, 20)} (${acc.activeMinutes}p) - Bàn giao`)
+        .setEmoji('🔴');
+    }
+    if (acc.isAchieved) {
+      return new StringSelectMenuOptionBuilder()
+        .setLabel(`Nick [${acc.accountCode}] (${totalH}h / ${targetH}h)`)
+        .setValue(`acc:${acc.accountCode}`)
+        .setDescription(`🌟 Đã hoàn thành 100% SLA hôm nay`)
+        .setEmoji('✅');
+    }
+    const remH = (acc.remainingMinutes / 60).toFixed(1);
+    return new StringSelectMenuOptionBuilder()
+      .setLabel(`Nick [${acc.accountCode}] (${totalH}h / ${targetH}h)`)
+      .setValue(`acc:${acc.accountCode}`)
+      .setDescription(`🟢 Đang trống • Còn thiếu ${remH}h`)
+      .setEmoji('🟢');
+  });
+
+  selectMenu.addOptions(options);
+  const components = [new ActionRowBuilder().addComponents(selectMenu)];
+
+  if (totalPages > 1) {
+    components.push(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`btn_checkin_page:${safePage - 1}`)
+          .setLabel('◀️ Trang trước')
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(safePage === 0),
+        new ButtonBuilder()
+          .setCustomId('btn_checkin_page_info')
+          .setLabel(`Trang ${safePage + 1}/${totalPages} (${accList.length} nick)`)
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(true),
+        new ButtonBuilder()
+          .setCustomId(`btn_checkin_page:${safePage + 1}`)
+          .setLabel('Trang sau ▶️')
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(safePage >= totalPages - 1)
+      )
+    );
   }
-  return `${hours}h ${remainingMins}p (${decimalHours}h)`;
-}
 
-function createProgressBar(percent, length = 12) {
-  const filled = Math.min(length, Math.max(0, Math.round((percent / 100) * length)));
-  const empty = length - filled;
-  return `${'▰'.repeat(filled)}${'▱'.repeat(empty)}`;
+  const embed = new EmbedBuilder()
+    .setTitle('🎮 CHỌN NICK CÀY HÔM NAY | 출근 계정 선택')
+    .setDescription(
+      `> Vui lòng chọn tài khoản từ danh sách bên dưới:\n\n` +
+      `• 🟢 **Nick Đang Trống:** Chọn để nhận ca và bắt đầu tính giờ ngay.\n` +
+      `• 🔴 **Nick Đang Cày:** Chọn để **Nhận Bàn Giao Ca** nếu đồng đội quên chốt ca.\n\n` +
+      `-# 🇰🇷 아래 메뉴에서 작업할 계정을 선택하세요 (작업 중인 계정은 교대 가능).`
+    )
+    .setColor('#57F287');
+
+  return { embeds: [embed], components };
 }
 
 export function buildCheckinModal() {
@@ -80,29 +143,29 @@ export async function handleButtonInteraction(interaction) {
 
   // 1. NÚT VÀO CA (Kiểm tra Role Member và mở danh sách Nick Game bằng Select Menu)
   if (customId === 'btn_checkin') {
+    await interaction.deferReply({ ephemeral: true });
+
     // Kiểm tra quyền theo Role Member
     if (config.targetWorkerRoleId && member) {
       const hasWorkerRole = member.roles?.cache?.has(config.targetWorkerRoleId);
       const isManager = member.permissions?.has('ManageGuild') || member.permissions?.has('Administrator');
       if (!hasWorkerRole && !isManager) {
-        return interaction.reply({
+        return interaction.editReply({
           content: `⛔ **Chưa có quyền vào ca / 권한 없음:**\n` +
                    `Bạn cần có role **Member** (Nhân viên cày game) để sử dụng hệ thống chấm công!\n` +
                    `Vui lòng liên hệ Quản lý để được cấp role trước khi vào ca.\n` +
-                   `-# 🇰🇷 작업 진행을 위해 관리자에게 Member 역할을 요청하세요.`,
-          ephemeral: true
+                   `-# 🇰🇷 작업 진행을 위해 관리자에게 Member 역할을 요청하세요.`
         });
       }
     }
 
     const activeShift = await getActiveShift(user.id);
     if (activeShift) {
-      return interaction.reply({
+      return interaction.editReply({
         content: `⚠️ **Bạn đang có ca cày dở dang! / 이미 근무 중입니다:**\n` +
                  `• Nick đang cày: \`[${activeShift.account_code}]\`\n` +
-                 `• Giờ vào ca: **${new Date(activeShift.check_in).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}**\n\n` +
-                 `👉 Vui lòng bấm **[🔴 Hết Ca | 퇴근]** trước khi đổi sang Nick khác!`,
-        ephemeral: true
+                 `• Giờ vào ca: **${formatTimeInTz(activeShift.check_in)}**\n\n` +
+                 `👉 Vui lòng bấm **[🔴 Hết Ca | 퇴근]** trước khi đổi sang Nick khác!`
       });
     }
 
@@ -110,71 +173,29 @@ export async function handleButtonInteraction(interaction) {
 
     // Nếu chưa có nick nào trong danh mục chính thức, nhắc Quản lý thêm nick
     if (accList.length === 0) {
-      return interaction.reply({
+      return interaction.editReply({
         content: `ℹ️ Chưa có Nick game nào trong danh mục hoạt động.\n` +
                  `👉 Quản lý vui lòng dùng lệnh \`/acc-manage add code:<mã_nick>\` để thêm Nick trước khi nhân viên vào ca!\n` +
-                 `-# 🇰🇷 등록된 계정이 없습니다. 관리자에게 계정 등록(/acc-manage add)을 요청하세요.`,
-        ephemeral: true
+                 `-# 🇰🇷 등록된 계정이 없습니다. 관리자에게 계정 등록(/acc-manage add)을 요청하세요.`
       });
     }
 
-    const selectMenu = new StringSelectMenuBuilder()
-      .setCustomId('select_checkin_account')
-      .setPlaceholder('🎮 Chọn Nick game bạn muốn cày / 계정을 선택하세요...');
+    return interaction.editReply(buildCheckinMenuPayload(accList, 0));
+  }
 
-    // Lấy tối đa 25 nick chính thức đang hoạt động
-    const displayList = accList.slice(0, 25);
-    const options = [];
-
-    for (const acc of displayList) {
-      const totalH = (acc.totalMinutes / 60).toFixed(1);
-      if (acc.hasActiveShift) {
-        options.push(
-          new StringSelectMenuOptionBuilder()
-            .setLabel(`Nick [${acc.accountCode}] (${totalH}h / 8.0h)`)
-            .setValue(`acc:${acc.accountCode}`)
-            .setDescription(`🔴 Có người cày: ${acc.activeFarmerName.slice(0, 20)} (${acc.activeMinutes}p) - Bàn giao`)
-            .setEmoji('🔴')
-        );
-      } else if (acc.isAchieved) {
-        options.push(
-          new StringSelectMenuOptionBuilder()
-            .setLabel(`Nick [${acc.accountCode}] (${totalH}h / 8.0h)`)
-            .setValue(`acc:${acc.accountCode}`)
-            .setDescription(`🌟 Đã hoàn thành 100% SLA hôm nay`)
-            .setEmoji('✅')
-        );
-      } else {
-        const remH = (acc.remainingMinutes / 60).toFixed(1);
-        options.push(
-          new StringSelectMenuOptionBuilder()
-            .setLabel(`Nick [${acc.accountCode}] (${totalH}h / 8.0h)`)
-            .setValue(`acc:${acc.accountCode}`)
-            .setDescription(`🟢 Đang trống • Còn thiếu ${remH}h`)
-            .setEmoji('🟢')
-        );
-      }
+  // 1b. CHUYỂN TRANG MENU VÀO CA (>25 NICK)
+  if (customId.startsWith('btn_checkin_page:')) {
+    await interaction.deferUpdate();
+    const page = parseInt(customId.split(':')[1], 10) || 0;
+    const accList = await getAllAccountsTodaySummary();
+    if (accList.length === 0) {
+      return interaction.editReply({
+        content: 'ℹ️ Chưa có Nick game nào trong danh mục hoạt động.',
+        embeds: [],
+        components: []
+      });
     }
-
-    selectMenu.addOptions(options);
-
-    const row = new ActionRowBuilder().addComponents(selectMenu);
-
-    const embed = new EmbedBuilder()
-      .setTitle('🎮 CHỌN NICK CÀY HÔM NAY | 출근 계정 선택')
-      .setDescription(
-        `> Vui lòng chọn tài khoản từ danh sách bên dưới:\n\n` +
-        `• 🟢 **Nick Đang Trống:** Chọn để nhận ca và bắt đầu tính giờ ngay.\n` +
-        `• 🔴 **Nick Đang Cày:** Chọn để **Nhận Bàn Giao Ca** nếu đồng đội quên chốt ca.\n\n` +
-        `-# 🇰🇷 아래 메뉴에서 작업할 계정을 선택하세요 (작업 중인 계정은 교대 가능).`
-      )
-      .setColor('#57F287');
-
-    return interaction.reply({
-      embeds: [embed],
-      components: [row],
-      ephemeral: true
-    });
+    return interaction.editReply(buildCheckinMenuPayload(accList, page));
   }
 
   // 2. NÚT HẾT CA (CHECK-OUT / 퇴근)
@@ -196,21 +217,23 @@ export async function handleButtonInteraction(interaction) {
       }
     }
 
-    const shiftDurationText = formatMinutes(result.durationMinutes);
-    const memberTotalText = formatMinutes(result.memberTotalToday);
-    const accountTotalText = formatMinutes(result.accountTotalToday);
+    const shiftDurationText = formatBilingualMins(result.durationMinutes);
+    const memberTotalText = formatBilingualMins(result.memberTotalToday);
+    const accountTotalText = formatBilingualMins(result.accountTotalToday);
+    const memberTargetStr = Number(result.memberTargetHours || config.dailyTargetHours).toFixed(1);
+    const accountTargetStr = Number(result.accountTargetHours || 8.0).toFixed(1);
 
     const accountStatusText = result.isAccountAchieved
-      ? '✅ **Nick này ĐÃ ĐẠT chỉ tiêu 8h hôm nay! / 오늘 목표 8시간 달성!**'
-      : `⏳ **Nick [${result.accountCode}] còn thiếu:** **${formatMinutes(Math.max(0, 480 - result.accountTotalToday))}** để đủ 8h SLA.`;
+      ? `✅ **Nick này ĐÃ ĐẠT chỉ tiêu ${accountTargetStr}h hôm nay! / 오늘 목표 ${accountTargetStr}시간 달성!**`
+      : `⏳ **Nick [${result.accountCode}] còn thiếu:** **${formatBilingualMins(result.accountRemainingMinutes)}** để đủ ${accountTargetStr}h SLA.`;
 
     const embed = new EmbedBuilder()
       .setTitle('🔴 KẾT THÚC CA LÀM VIỆC | 퇴근 완료')
       .setDescription(
         `> **Nhân sự / 근무자:** **${displayName}**\n` +
         `> **Nick vừa cày / 작업 계정:** \`[${result.accountCode}]\`  •  **Ca vừa rồi / 이번 근무:** **${shiftDurationText}**\n\n` +
-        `👤 **Tổng giờ của bạn hôm nay / 오늘 개인 총 근무:** \`${memberTotalText} / 8.0h\`\n` +
-        `🛡️ **Tổng giờ Nick [${result.accountCode}] / 오늘 계정 총 작업:** \`${accountTotalText} / 8.0h\`\n` +
+        `👤 **Tổng giờ của bạn hôm nay / 오늘 개인 총 근무:** \`${memberTotalText} / ${memberTargetStr}h\`\n` +
+        `🛡️ **Tổng giờ Nick [${result.accountCode}] / 오늘 계정 총 작업:** \`${accountTotalText} / ${accountTargetStr}h\`\n` +
         `└ ${accountStatusText}\n\n` +
         `-# 💡 Đã mở khóa nick. Đồng đội tiếp theo có thể nhận ca!\n` +
         `-# 🇰🇷 다음 작업자를 위해 계정 잠금이 해제되었습니다.`
@@ -228,8 +251,9 @@ export async function handleButtonInteraction(interaction) {
   if (customId === 'btn_status') {
     await interaction.deferReply({ ephemeral: true });
     const summary = await getDaySummaryForUser(user.id);
-    const totalText = formatMinutes(summary.totalMinutes);
-    const remainingText = formatMinutes(summary.remainingMinutes);
+    const totalText = formatBilingualMins(summary.totalMinutes);
+    const remainingText = formatBilingualMins(summary.remainingMinutes);
+    const targetHoursStr = Number(summary.targetHours || config.dailyTargetHours).toFixed(1);
     const hoursLeftBeforeCutoff = getHoursUntilCutoff().toFixed(1);
 
     const rawPercent = (summary.totalMinutes / (summary.targetHours * 60)) * 100;
@@ -240,7 +264,7 @@ export async function handleButtonInteraction(interaction) {
     const progressBar = createProgressBar(rawPercent);
 
     let currentShiftStatus = summary.hasActiveShift 
-      ? `🟢 **Đang trong ca / 근무 중** trên Nick \`[${summary.activeAccount}]\` (Đã cày: ${formatMinutes(summary.activeMinutes)})`
+      ? `🟢 **Đang trong ca / 근무 중** trên Nick \`[${summary.activeAccount}]\` (Đã cày: ${formatBilingualMins(summary.activeMinutes)})`
       : `⚪ **Đang nghỉ ngơi / 휴식 중**`;
 
     const embed = new EmbedBuilder()
@@ -248,7 +272,7 @@ export async function handleButtonInteraction(interaction) {
       .setDescription(
         `• **Trạng thái / 상태:** ${currentShiftStatus}\n` +
         `• **Tiến độ / 달성률:** \`${progressBar}\` **${displayPercent}%**\n\n` +
-        `⏱️ **Tổng giờ của bạn / 총 근무 시간:** \`${totalText} / 8.0h\`\n` +
+        `⏱️ **Tổng giờ của bạn / 총 근무 시간:** \`${totalText} / ${targetHoursStr}h\`\n` +
         `⏳ **Còn thiếu / 부족한 시간:** \`${remainingText}\`\n` +
         `⏰ **Hạn chốt ca / 마감:** còn \`${hoursLeftBeforeCutoff}h\` (trước 06:00 sáng mai / 익일 06:00 마감)\n\n` +
         `-# 💡 Bấm nút [🎮 Trạng Thái Nick] để xem tiến độ của từng tài khoản game.\n` +
@@ -280,11 +304,12 @@ export async function handleButtonInteraction(interaction) {
 
   // 5. NÚT XÁC NHẬN BÀN GIAO CA (HANDOFF CONFIRM)
   if (customId.startsWith('btn_confirm_handoff:')) {
+    await interaction.deferUpdate();
     const targetAccount = customId.split(':')[1];
     const result = await handoffShift(user.id, displayName, targetAccount);
 
     if (!result.success) {
-      return interaction.update({
+      return interaction.editReply({
         content: `⚠️ **Bàn giao không thành công:** ${result.message}`,
         embeds: [],
         components: []
@@ -306,8 +331,8 @@ export async function handleButtonInteraction(interaction) {
       }
     }
 
-    const checkInTimeStr = result.newShift.checkInTime.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-    const oldDurationStr = formatMinutes(result.oldUser.durationMinutes);
+    const checkInTimeStr = formatTimeInTz(result.newShift.checkInTime);
+    const oldDurationStr = formatBilingualMins(result.oldUser.durationMinutes);
 
     // Cập nhật phản hồi cho người nhận ca
     const confirmEmbed = new EmbedBuilder()
@@ -323,7 +348,7 @@ export async function handleButtonInteraction(interaction) {
       .setFooter({ text: 'Gamefy Base Teams • Shift Handover | 인수인계 완료' })
       .setTimestamp();
 
-    await interaction.update({
+    await interaction.editReply({
       embeds: [confirmEmbed],
       components: []
     });
@@ -370,11 +395,13 @@ export async function handleSelectMenuInteraction(interaction) {
   const displayName = member?.displayName || user.username;
   const selectedValue = interaction.values[0];
 
-  // 1. Trường hợp người dùng chọn "Nhập nick mới khác"
+  // 1. Trường hợp người dùng chọn "Nhập nick mới khác" (phải showModal trước khi defer)
   if (selectedValue === '__NEW_ACCOUNT__') {
     const modal = buildCheckinModal();
     return interaction.showModal(modal);
   }
+
+  await interaction.deferUpdate();
 
   // 2. Trường hợp chọn nick cụ thể: 'acc:TÊN_ACC'
   const accountCode = selectedValue.startsWith('acc:') ? selectedValue.slice(4) : selectedValue;
@@ -385,7 +412,7 @@ export async function handleSelectMenuInteraction(interaction) {
 
   if (activeShiftOnAcc) {
     if (activeShiftOnAcc.user_id === user.id) {
-      return interaction.update({
+      return interaction.editReply({
         content: `⚠️ Bạn chính là người đang cày Nick **\`[${cleanAccount}]\`** này rồi!\n*(이미 해당 계정으로 작업 중입니다.)*`,
         embeds: [],
         components: []
@@ -394,9 +421,9 @@ export async function handleSelectMenuInteraction(interaction) {
 
     // NICK ĐANG CÓ NGƯỜI KHÁC CÀY -> HIỂN THỊ NÚT NHẬN BÀN GIAO CA
     const checkInTime = new Date(activeShiftOnAcc.check_in);
-    const checkInStr = checkInTime.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+    const checkInStr = formatTimeInTz(checkInTime);
     const elapsedMinutes = Math.max(1, Math.round((Date.now() - checkInTime.getTime()) / 60000));
-    const elapsedStr = formatMinutes(elapsedMinutes);
+    const elapsedStr = formatBilingualMins(elapsedMinutes);
 
     const handoffEmbed = new EmbedBuilder()
       .setTitle('⚡ XÁC NHẬN BÀN GIAO CA | 인수인계 확인')
@@ -423,7 +450,7 @@ export async function handleSelectMenuInteraction(interaction) {
         .setStyle(ButtonStyle.Secondary)
     );
 
-    return interaction.update({
+    return interaction.editReply({
       embeds: [handoffEmbed],
       components: [handoffRow]
     });
@@ -433,7 +460,7 @@ export async function handleSelectMenuInteraction(interaction) {
   const result = await startShiftWithAccount(user.id, displayName, cleanAccount);
 
   if (!result.success) {
-    return interaction.update({
+    return interaction.editReply({
       content: `⚠️ **Thông báo / 알림:** ${result.message}`,
       embeds: [],
       components: []
@@ -449,16 +476,17 @@ export async function handleSelectMenuInteraction(interaction) {
     }
   }
 
-  const checkInTimeStr = result.checkInTime.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  const checkInTimeStr = formatTimeInTz(result.checkInTime);
   const accSummary = await getAccountDailySummary(result.accountCode, result.workDate);
-  const accDoneSoFar = formatMinutes(accSummary.completedMinutes);
+  const accDoneSoFar = formatBilingualMins(accSummary.completedMinutes);
+  const accTargetStr = Number(accSummary.targetHours || 8.0).toFixed(1);
 
   const embed = new EmbedBuilder()
     .setTitle('🟢 CHECK-IN THÀNH CÔNG | 출근 완료')
     .setDescription(
       `> **Nhân sự / 근무자:** **${displayName}**  •  **Giờ vào / 출근 시간:** **${checkInTimeStr}**\n\n` +
       `🎮 **Nick Game / 작업 계정:** \`[${result.accountCode}]\`\n` +
-      `📊 **Tiến độ Nick hôm nay / 오늘 계정 누적:** \`${accDoneSoFar} / 8.0h\`\n\n` +
+      `📊 **Tiến độ Nick hôm nay / 오늘 계정 누적:** \`${accDoneSoFar} / ${accTargetStr}h\`\n\n` +
       `📸 **Lưu ý / 주의사항:** Chụp ảnh màn hình nhận nick gửi vào kênh này!\n` +
       `-# 🇰🇷 작업 시작 인증샷을 전송하고 교대 시 퇴근 버튼을 꼭 눌러주세요.`
     )
@@ -466,7 +494,7 @@ export async function handleSelectMenuInteraction(interaction) {
     .setFooter({ text: 'Gamefy Base Teams • Shift Started | 출근 완료' })
     .setTimestamp();
 
-  return interaction.update({
+  return interaction.editReply({
     embeds: [embed],
     components: []
   });
@@ -477,6 +505,8 @@ export async function handleSelectMenuInteraction(interaction) {
  */
 export async function handleModalInteraction(interaction) {
   if (interaction.customId !== 'modal_checkin') return;
+
+  await interaction.deferReply({ ephemeral: true });
 
   const { user, member } = interaction;
   const displayName = member?.displayName || user.username;
@@ -499,18 +529,16 @@ export async function handleModalInteraction(interaction) {
           .setStyle(ButtonStyle.Secondary)
       );
 
-      return interaction.reply({
+      return interaction.editReply({
         content: `⛔ **TRÙNG NICK GAME / 계정 중복 경고:**\n` +
                  `${result.message}\n\n` +
                  `👉 Nếu đồng đội quên chốt ca, bạn có thể bấm **[Nhận Bàn Giao Ca]** bên dưới:`,
-        components: [handoffRow],
-        ephemeral: true
+        components: [handoffRow]
       });
     }
 
-    return interaction.reply({
-      content: `⚠️ **Thông báo / 알림:** ${result.message}`,
-      ephemeral: true
+    return interaction.editReply({
+      content: `⚠️ **Thông báo / 알림:** ${result.message}`
     });
   }
 
@@ -523,19 +551,19 @@ export async function handleModalInteraction(interaction) {
     }
   }
 
-  const checkInTimeStr = result.checkInTime.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  const checkInTimeStr = formatTimeInTz(result.checkInTime);
   const noteStr = note ? `\n• **Ghi chú:** *${note}*` : '';
 
-  // Lấy tiến độ hiện tại của Nick này trong ngày để báo cho member biết
   const accSummary = await getAccountDailySummary(result.accountCode, result.workDate);
-  const accDoneSoFar = formatMinutes(accSummary.completedMinutes);
+  const accDoneSoFar = formatBilingualMins(accSummary.completedMinutes);
+  const accTargetStr = Number(accSummary.targetHours || 8.0).toFixed(1);
 
   const embed = new EmbedBuilder()
     .setTitle('🟢 CHECK-IN THÀNH CÔNG | 출근 완료')
     .setDescription(
       `> **Nhân sự / 근무자:** **${displayName}**  •  **Giờ vào / 출근 시간:** **${checkInTimeStr}**\n\n` +
       `🎮 **Nick Game / 작업 계정:** \`[${result.accountCode}]\`\n` +
-      `📊 **Tiến độ Nick hôm nay / 오늘 계정 누적:** \`${accDoneSoFar} / 8.0h\`${noteStr}\n\n` +
+      `📊 **Tiến độ Nick hôm nay / 오늘 계정 누적:** \`${accDoneSoFar} / ${accTargetStr}h\`${noteStr}\n\n` +
       `📸 **Lưu ý / 주의사항:** Chụp ảnh màn hình nhận nick gửi vào kênh này!\n` +
       `-# 🇰🇷 교대 시 인증샷을 전송하고 퇴근 버튼을 꼭 눌러주세요.`
     )
@@ -543,8 +571,7 @@ export async function handleModalInteraction(interaction) {
     .setFooter({ text: 'Gamefy Base Teams • Shift Started | 출근 완료' })
     .setTimestamp();
 
-  return interaction.reply({
-    embeds: [embed],
-    ephemeral: true
+  return interaction.editReply({
+    embeds: [embed]
   });
 }

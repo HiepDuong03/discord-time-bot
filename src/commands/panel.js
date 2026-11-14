@@ -12,6 +12,8 @@ export const data = new SlashCommandBuilder()
   .setDescription('Mở bảng điều khiển Chấm công song ngữ (Việt - Hàn) / 출퇴근 관리 패널 열기');
 
 export async function execute(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+
   const isManager = Boolean(
     interaction.inGuild() &&
     (
@@ -59,20 +61,26 @@ export async function execute(interaction) {
   );
 
   if (!isManager) {
-    return interaction.reply({
+    return interaction.editReply({
       embeds: [embed],
-      components: [row1, row2],
-      ephemeral: true
+      components: [row1, row2]
     });
   }
 
-  await interaction.channel.send({
-    embeds: [embed],
-    components: [row1, row2]
-  });
+  try {
+    await interaction.channel.send({
+      embeds: [embed],
+      components: [row1, row2]
+    });
+  } catch (err) {
+    return interaction.editReply({
+      content: `❌ Bot không thể gửi Bảng Chấm Công công khai vào kênh này (thiếu quyền Send Messages / Embed Links hoặc lỗi mạng: ${err.message}).\n👉 Tuy nhiên bạn vẫn có thể dùng bảng cá nhân ngay bên dưới:`,
+      embeds: [embed],
+      components: [row1, row2]
+    });
+  }
 
-  return interaction.reply({
-    content: '✅ Đã khởi tạo Bảng Chấm Công Gaming HUD thành công! / 출퇴근 관리 패널이 생성되었습니다.',
-    ephemeral: true
+  return interaction.editReply({
+    content: '✅ Đã khởi tạo Bảng Chấm Công Gaming HUD thành công! / 출퇴근 관리 패널이 생성되었습니다.'
   });
 }

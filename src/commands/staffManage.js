@@ -73,15 +73,15 @@ export async function autocomplete(interaction) {
 
 export async function execute(interaction) {
   const subcommand = interaction.options.getSubcommand();
+  await interaction.deferReply({ ephemeral: false });
 
   if (subcommand === 'add') {
     const targetUser = interaction.options.getUser('user');
     const targetHours = interaction.options.getNumber('target') || config.dailyTargetHours;
 
     if (targetHours <= 0 || targetHours > 24) {
-      return interaction.reply({
-        content: '❌ Chỉ tiêu giờ/ngày phải nằm trong khoảng `0.5` đến `24` giờ!',
-        ephemeral: true
+      return interaction.editReply({
+        content: '❌ Chỉ tiêu giờ/ngày phải nằm trong khoảng `0.5` đến `24` giờ!'
       });
     }
 
@@ -128,16 +128,15 @@ export async function execute(interaction) {
       .setFooter({ text: 'Gamefy Base Teams • Staff Management | 직원 관리' })
       .setTimestamp();
 
-    return interaction.reply({ embeds: [embed] });
+    return interaction.editReply({ embeds: [embed] });
   }
 
   if (subcommand === 'remove') {
     const targetUser = interaction.options.getUser('user');
     const activeShift = await getActiveShift(targetUser.id);
     if (activeShift) {
-      return interaction.reply({
-        content: `❌ Không thể gỡ <@${targetUser.id}> vì nhân sự đang trong ca làm trên Nick \`[${activeShift.account_code}]\`.\n👉 Hãy dùng \`/force-checkout\` để chốt ca trước!`,
-        ephemeral: true
+      return interaction.editReply({
+        content: `❌ Không thể gỡ <@${targetUser.id}> vì nhân sự đang trong ca làm trên Nick \`[${activeShift.account_code}]\`.\n👉 Hãy dùng \`/force-checkout\` để chốt ca trước!`
       });
     }
 
@@ -183,12 +182,10 @@ export async function execute(interaction) {
       .setFooter({ text: 'Gamefy Base Teams • Staff Management | 직원 관리' })
       .setTimestamp();
 
-    return interaction.reply({ embeds: [embed] });
+    return interaction.editReply({ embeds: [embed] });
   }
 
   if (subcommand === 'list') {
-    await interaction.deferReply({ ephemeral: false });
-
     const dbStaff = await getAllStaffMembers();
     const dbMap = new Map(dbStaff.map(u => [u.discord_id, u]));
 

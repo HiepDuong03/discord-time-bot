@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import db from '../database/db.js';
+import { toTimezoneExcelDate, formatDateTimeInTz } from '../utils/dateUtils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -86,6 +87,17 @@ function setColumnWidths(ws, widths) {
 }
 
 /**
+ * Tính số giờ của 1 bản ghi ca làm (dùng thống nhất cho summarizeShifts, cached formula result & Excel)
+ */
+function resolveShiftHours(shift) {
+  if (shift.status === 'ADJUSTED') {
+    return Number((Number(shift.durationMinutes || 0) / 60).toFixed(2));
+  }
+  if (!shift.checkOutDate) return null;
+  return Number(((shift.checkOutDate.getTime() - shift.checkInDate.getTime()) / (1000 * 3600)).toFixed(2));
+}
+
+/**
  * Tính nhanh các chỉ số cho embed (cùng logic với công thức trong Excel)
  */
 export function summarizeShifts(shifts, slaHours = 8) {
@@ -97,8 +109,8 @@ export function summarizeShifts(shifts, slaHours = 8) {
   shifts.forEach(s => {
     staffSet.add(s.staff);
     nickSet.add(s.nick);
-    if (!s.checkOutDate) return;
-    const h = (s.checkOutDate - s.checkInDate) / (1000 * 3600);
+    const h = typeof s.hours === 'number' ? s.hours : resolveShiftHours(s);
+    if (h === null) return;
     totalHours += h;
     const k = `${s.work_date}|${s.nick}|${s.staff}`;
     days[k] = (days[k] || 0) + h;
@@ -109,11 +121,12 @@ export function summarizeShifts(shifts, slaHours = 8) {
   const deficits = [];
 
   Object.entries(days).forEach(([k, h]) => {
-    if (h >= slaHours) {
+    const roundedH = Number(h.toFixed(2));
+    if (roundedH >= slaHours) {
       passedCount++;
     } else {
       const [d, nick, staff] = k.split('|');
-      deficits.push({ date: d, nick, staff, hours: h });
+      deficits.push({ date: d, nick, staff, hours: roundedH });
     }
   });
 
@@ -152,17 +165,24 @@ export async function exportTimesheetToExcel(fromDate, toDate, slaHours = 8) {
   });
   const rawShifts = rawShiftsRes.rows;
 
-  const shifts = rawShifts.map(s => ({
-    id: 'S' + String(s.id).padStart(4, '0'),
-    staff: s.display_name,
-    discord_id: s.discord_id,
-    nick: s.account_code,
-    work_date: s.work_date,
-    checkInDate: new Date(s.check_in),
-    checkOutDate: s.check_out ? new Date(s.check_out) : null,
-    workDateObj: new Date(s.work_date + 'T00:00:00.000Z'),
-    note: s.note || ''
-  })).sort((a, b) => a.checkInDate - b.checkInDate);
+  const shifts = rawShifts.map(s => {
+    const mapped = {
+      id: 'S' + String(s.id).padStart(4, '0'),
+      staff: s.display_name,
+      discord_id: s.discord_id,
+      nick: s.account_code,
+      work_date: s.work_date,
+      status: s.status || 'COMPLETED',
+      durationMinutes: Number(s.duration_minutes || 0),
+      checkInRawDate: new Date(s.check_in),
+      checkInDate: toTimezoneExcelDate(s.check_in),
+      checkOutDate: s.check_out ? toTimezoneExcelDate(s.check_out) : null,
+      workDateObj: new Date(s.work_date + 'T00:00:00.000Z'),
+      note: s.note || ''
+    };
+    mapped.hours = resolveShiftHours(mapped);
+    return mapped;
+  }).sort((a, b) => a.checkInRawDate - b.checkInRawDate);
 
   const summary = summarizeShifts(shifts, slaHours);
 
@@ -193,19 +213,21 @@ export async function exportTimesheetToExcel(fromDate, toDate, slaHours = 8) {
     if (s.checkOutDate) {
       row.getCell(6).value = s.checkOutDate;
     }
-    // Thời lượng tính bằng công thức, ca đang chạy để trống
-    const durationHours = s.checkOutDate
-      ? Number(((s.checkOutDate.getTime() - s.checkInDate.getTime()) / (1000 * 3600)).toFixed(2))
-      : null;
-    const statusStr = s.checkOutDate ? "Hoàn tất 완료" : "Đang chạy 진행 중";
 
-    row.getCell(7).value = durationHours !== null
-      ? { formula: `IF(F${r}="","",ROUND((F${r}-E${r})*24,2))`, result: durationHours }
-      : "";
-    row.getCell(8).value = { 
-      formula: `IF(F${r}="","Đang chạy 진행 중","Hoàn tất 완료")`, 
-      result: statusStr 
-    };
+    if (s.status === 'ADJUSTED') {
+      row.getCell(7).value = s.hours;
+      row.getCell(8).value = 'Điều chỉnh 조정';
+    } else {
+      const durationHours = s.hours;
+      const statusStr = s.checkOutDate ? 'Hoàn tất 완료' : 'Đang chạy 진행 중';
+      row.getCell(7).value = durationHours !== null
+        ? { formula: `IF(F${r}="","",ROUND((F${r}-E${r})*24,2))`, result: durationHours }
+        : '';
+      row.getCell(8).value = {
+        formula: `IF(F${r}="","Đang chạy 진행 중","Hoàn tất 완료")`,
+        result: statusStr
+      };
+    }
     row.getCell(9).value = s.note;
 
     bodyRow(det, r, 9, i % 2 === 1, {
@@ -251,8 +273,8 @@ export async function exportTimesheetToExcel(fromDate, toDate, slaHours = 8) {
     const countShifts = matchShifts.length;
     let dayTotalH = 0;
     matchShifts.forEach(s => {
-      if (s.checkOutDate) {
-        dayTotalH += (s.checkOutDate.getTime() - s.checkInDate.getTime()) / (1000 * 3600);
+      if (typeof s.hours === 'number') {
+        dayTotalH += s.hours;
       }
     });
     dayTotalH = Number(dayTotalH.toFixed(2));
@@ -308,7 +330,7 @@ export async function exportTimesheetToExcel(fromDate, toDate, slaHours = 8) {
   ov.getCell('A2').font = f(false, 9, MUTED);
   ov.getCell('C2').value = `${fromDate}  →  ${toDate}`;
   ov.getCell('C2').font = f(true, 10);
-  const exportedAtStr = new Date().toLocaleString('vi-VN', { hour12: false });
+  const exportedAtStr = formatDateTimeInTz(new Date());
   ov.getCell('D2').value = `Xuất lúc 생성: ${exportedAtStr}`;
   ov.getCell('D2').font = f(false, 9, MUTED);
 
@@ -399,7 +421,7 @@ export async function exportTimesheetToExcel(fromDate, toDate, slaHours = 8) {
         const matchShifts = shifts.filter(s => s.work_date === k.dateStr && s.staff === k.staff && s.nick === k.nick);
         let dH = 0;
         matchShifts.forEach(s => {
-          if (s.checkOutDate) dH += (s.checkOutDate.getTime() - s.checkInDate.getTime()) / 3600000;
+          if (typeof s.hours === 'number') dH += s.hours;
         });
         dH = Number(dH.toFixed(2));
         stHours += dH;
@@ -501,7 +523,7 @@ export async function exportTimesheetToExcel(fromDate, toDate, slaHours = 8) {
         const matchShifts = shifts.filter(s => s.work_date === k.dateStr && s.staff === k.staff && s.nick === k.nick);
         let dH = 0;
         matchShifts.forEach(s => {
-          if (s.checkOutDate) dH += (s.checkOutDate.getTime() - s.checkInDate.getTime()) / 3600000;
+          if (typeof s.hours === 'number') dH += s.hours;
         });
         dH = Number(dH.toFixed(2));
         nickHours += dH;

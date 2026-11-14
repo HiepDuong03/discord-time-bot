@@ -1,5 +1,6 @@
 import db from '../database/db.js';
 import { config } from '../config/env.js';
+import { getWorkDateIso } from '../utils/dateUtils.js';
 
 // Mốc chặn an toàn tối đa cho 1 ca cày liên tục (14 tiếng = 840 phút)
 const MAX_SHIFT_MINUTES = 14 * 60;
@@ -17,17 +18,10 @@ export function normalizeAccountCode(rawCode) {
 }
 
 /**
- * Tính ngày làm việc (work_date) theo mốc Cut-off (mặc định 06:00 sáng).
+ * Tính ngày làm việc (work_date) theo múi giờ config.timezone và mốc Cut-off (mặc định 06:00 sáng).
  */
 export function getWorkDate(targetDate = new Date()) {
-  const d = new Date(targetDate);
-  if (d.getHours() < config.cutoffHour) {
-    d.setDate(d.getDate() - 1);
-  }
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return getWorkDateIso(targetDate, config.cutoffHour, config.timezone);
 }
 
 /**
@@ -166,6 +160,7 @@ export async function endShift(discordId) {
 
   const memberSummary = await getDaySummaryForUser(discordId, activeShift.work_date);
   const accountSummary = await getAccountDailySummary(activeShift.account_code, activeShift.work_date);
+  const accountTargetMinutes = Math.round(accountSummary.targetHours * 60);
 
   return {
     success: true,
@@ -173,8 +168,11 @@ export async function endShift(discordId) {
     accountCode: activeShift.account_code,
     durationMinutes,
     memberTotalToday: memberSummary.totalMinutes,
+    memberTargetHours: memberSummary.targetHours,
     accountTotalToday: accountSummary.completedMinutes,
-    isAccountAchieved: accountSummary.completedMinutes >= 480,
+    accountTargetHours: accountSummary.targetHours,
+    accountRemainingMinutes: Math.max(0, accountTargetMinutes - accountSummary.completedMinutes),
+    isAccountAchieved: accountSummary.completedMinutes >= accountTargetMinutes,
     workDate: activeShift.work_date
   };
 }
@@ -208,6 +206,7 @@ export async function forceEndShiftByUser(userId, leaderName, reason) {
 
   return {
     success: true,
+    userId,
     accountCode: activeShift.account_code,
     durationMinutes,
     workDate: activeShift.work_date

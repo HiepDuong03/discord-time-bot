@@ -106,6 +106,7 @@ export async function autocomplete(interaction) {
 
 export async function execute(interaction) {
   const subcommand = interaction.options.getSubcommand();
+  await interaction.deferReply({ ephemeral: false });
 
   // 1. THÊM NICK MỚI (hoặc bật lại nick đang tắt)
   if (subcommand === 'add') {
@@ -115,9 +116,8 @@ export async function execute(interaction) {
     const code = matchedExisting ? matchedExisting.account_code : rawCode.replace(/^[<\s]+|[>\s]+$/g, '').trim();
 
     if (!code) {
-      return interaction.reply({
-        content: '❌ Mã Nick Game không hợp lệ (không được để trống hoặc chỉ chứa `<>`).',
-        ephemeral: true
+      return interaction.editReply({
+        content: '❌ Mã Nick Game không hợp lệ (không được để trống hoặc chỉ chứa `<>`).'
       });
     }
 
@@ -125,9 +125,8 @@ export async function execute(interaction) {
 
     const result = await addOfficialAccount(code, targetHours);
     if (!result.success) {
-      return interaction.reply({
-        content: `❌ ${result.message}`,
-        ephemeral: true
+      return interaction.editReply({
+        content: `❌ ${result.message}`
       });
     }
 
@@ -143,7 +142,7 @@ export async function execute(interaction) {
       .setFooter({ text: 'Gamefy Base Teams • Account Management | 계정 관리' })
       .setTimestamp();
 
-    return interaction.reply({ embeds: [embed] });
+    return interaction.editReply({ embeds: [embed] });
   }
 
   // 2. GỠ / XÓA NICK
@@ -152,9 +151,8 @@ export async function execute(interaction) {
     const result = await removeOfficialAccount(code);
 
     if (!result.success) {
-      return interaction.reply({
-        content: `❌ ${result.message}`,
-        ephemeral: true
+      return interaction.editReply({
+        content: `❌ ${result.message}`
       });
     }
 
@@ -169,7 +167,7 @@ export async function execute(interaction) {
       .setFooter({ text: 'Gamefy Base Teams • Account Management | 계정 관리' })
       .setTimestamp();
 
-    return interaction.reply({ embeds: [embed] });
+    return interaction.editReply({ embeds: [embed] });
   }
 
   // 3. XÓA VĨNH VIỄN NICK KHỎI DB (HARD DELETE)
@@ -179,9 +177,8 @@ export async function execute(interaction) {
     const result = await deleteOfficialAccount(code, deleteShifts);
 
     if (!result.success) {
-      return interaction.reply({
-        content: `❌ ${result.message}`,
-        ephemeral: true
+      return interaction.editReply({
+        content: `❌ ${result.message}`
       });
     }
 
@@ -200,7 +197,7 @@ export async function execute(interaction) {
       .setFooter({ text: 'Gamefy Base Teams • Account Management | 계정 관리' })
       .setTimestamp();
 
-    return interaction.reply({ embeds: [embed] });
+    return interaction.editReply({ embeds: [embed] });
   }
 
   // 4. XEM DANH SÁCH NICK
@@ -208,9 +205,8 @@ export async function execute(interaction) {
     const accounts = await getAllOfficialAccounts();
 
     if (accounts.length === 0) {
-      return interaction.reply({
-        content: 'ℹ️ Chưa có Nick game nào trong danh mục. Dùng `/acc-manage add code:Acc_01` để thêm!\n*(등록된 계정이 없습니다. /acc-manage add 명령어로 추가하세요.)*',
-        ephemeral: true
+      return interaction.editReply({
+        content: 'ℹ️ Chưa có Nick game nào trong danh mục. Dùng `/acc-manage add code:Acc_01` để thêm!\n*(등록된 계정이 없습니다. /acc-manage add 명령어로 추가하세요.)*'
       });
     }
 
@@ -235,7 +231,7 @@ export async function execute(interaction) {
       );
       embed.addFields({
         name: `🟢 ĐANG HOẠT ĐỘNG / 활성 계정 (${activeList.length} Nick / 개)`,
-        value: lines.join('\n')
+        value: lines.join('\n').slice(0, 1020)
       });
     }
 
@@ -245,10 +241,10 @@ export async function execute(interaction) {
       );
       embed.addFields({
         name: `⚪ ĐÃ TẮT / 비활성 계정 (${inactiveList.length} Nick / 개)`,
-        value: lines.join('\n')
+        value: lines.join('\n').slice(0, 1020)
       });
     }
 
-    return interaction.reply({ embeds: [embed] });
+    return interaction.editReply({ embeds: [embed] });
   }
 }

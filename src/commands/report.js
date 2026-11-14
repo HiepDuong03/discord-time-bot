@@ -3,18 +3,7 @@ import { generateDailyBarChartUrl } from '../services/chartService.js';
 import { getTeamTodaySummary, getWorkDate } from '../services/shiftService.js';
 import { config } from '../config/env.js';
 import { smartParseDate, buildDateAutocompleteChoices } from '../utils/dateUtils.js';
-
-function formatMinutes(minutes) {
-  const m = Math.max(0, Math.round(minutes));
-  const hours = Math.floor(m / 60);
-  const remainingMins = m % 60;
-  const decimalHours = (m / 60).toFixed(2);
-
-  if (hours === 0) {
-    return `${remainingMins}p (${decimalHours}h)`;
-  }
-  return `${hours}h ${remainingMins}p (${decimalHours}h)`;
-}
+import { formatMinutes } from '../utils/formatUtils.js';
 
 export const data = new SlashCommandBuilder()
   .setName('report')
@@ -83,11 +72,12 @@ export async function execute(interaction) {
       .map((member, idx) => {
         const rankPrefix = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `**${idx + 1}.**`;
         const timeStr = formatMinutes(member.totalMinutes);
+        const targetStr = Number(member.targetHours || config.dailyTargetHours).toFixed(1);
         const icon = member.isAchieved ? '🟢' : member.totalMinutes >= 240 ? '🟡' : '🔴';
         const statusText = member.isAchieved 
-          ? '🌟 Đạt 8h (달성)' 
+          ? `🌟 Đạt ${targetStr}h (달성)` 
           : `Thiếu ${formatMinutes(member.remainingMinutes)} (미달)`;
-        return `${rankPrefix} ${icon} **${member.displayName}** ➔ \`${timeStr} / 8.0h\` • *${statusText}*`;
+        return `${rankPrefix} ${icon} **${member.displayName}** ➔ \`${timeStr} / ${targetStr}h\` • *${statusText}*`;
       });
 
     const embed = new EmbedBuilder()

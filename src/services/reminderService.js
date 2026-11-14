@@ -1,16 +1,11 @@
 import cron from 'node-cron';
 import { EmbedBuilder } from 'discord.js';
 import { config } from '../config/env.js';
+import { getHoursUntilCutoffInTz } from '../utils/dateUtils.js';
 import { getTeamTodaySummary, getAllAccountsTodaySummary } from './shiftService.js';
 
 export function getHoursUntilCutoff(now = new Date()) {
-  const cutoff = new Date(now);
-  if (now.getHours() >= config.cutoffHour) {
-    cutoff.setDate(cutoff.getDate() + 1);
-  }
-  cutoff.setHours(config.cutoffHour, 0, 0, 0);
-  const diffMs = cutoff.getTime() - now.getTime();
-  return Math.max(0, diffMs / (1000 * 60 * 60));
+  return getHoursUntilCutoffInTz(now, config.cutoffHour, config.timezone);
 }
 
 /**

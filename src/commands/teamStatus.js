@@ -2,17 +2,20 @@ import { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } from 'discord.
 import { getTeamTodaySummary, getWorkDate } from '../services/shiftService.js';
 import { getHoursUntilCutoff } from '../services/reminderService.js';
 import { config } from '../config/env.js';
+import { formatMinutes } from '../utils/formatUtils.js';
 
-function formatMinutes(minutes) {
-  const m = Math.max(0, Math.round(minutes));
-  const hours = Math.floor(m / 60);
-  const remainingMins = m % 60;
-  const decimalHours = (m / 60).toFixed(2);
-
-  if (hours === 0) {
-    return `${remainingMins}p (${decimalHours}h)`;
+function joinLinesSafe(lines, maxLen = 1020) {
+  let out = '';
+  let hidden = 0;
+  for (const line of lines) {
+    const next = out ? `${out}\n${line}` : line;
+    if (next.length > maxLen - 28) {
+      hidden++;
+    } else {
+      out = next;
+    }
   }
-  return `${hours}h ${remainingMins}p (${decimalHours}h)`;
+  return hidden > 0 ? `${out}\n*...và ${hidden} người khác.*` : out;
 }
 
 export const data = new SlashCommandBuilder()
@@ -21,6 +24,8 @@ export const data = new SlashCommandBuilder()
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild);
 
 export async function execute(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+
   const workDate = getWorkDate();
   const teamData = await getTeamTodaySummary(workDate);
   const hoursLeftBeforeCutoff = getHoursUntilCutoff().toFixed(1);
@@ -52,22 +57,23 @@ export async function execute(interaction) {
       const did = gm.id;
       const dName = gm.displayName || gm.user.username;
       const m = teamMap.get(did);
+      const targetStr = `${(m?.targetHours ?? config.dailyTargetHours)}h`;
 
       if (m && m.hasActiveShift) {
         const totalStr = formatMinutes(m.totalMinutes);
         activeWorkers.push(
-          `• 🟢 **${dName}** (<@${did}>) ➔ Ca này / 이번: **${m.activeMinutes}분** | Tổng / 누적: \`${totalStr} / ${m.targetHours}h\``
+          `• 🟢 **${dName}** (<@${did}>) ➔ Ca này / 이번: **${m.activeMinutes}분** | Tổng / 누적: \`${totalStr} / ${targetStr}\``
         );
       } else if (m && m.totalMinutes > 0) {
         const totalStr = formatMinutes(m.totalMinutes);
         const icon = m.isAchieved ? '🌟' : m.totalMinutes >= 240 ? '🟡' : '🔴';
-        const statusNote = m.isAchieved ? 'Đạt 8h SLA (달성)' : `Thiếu ${formatMinutes(m.remainingMinutes)} (미달)`;
+        const statusNote = m.isAchieved ? `Đạt ${targetStr} SLA (달성)` : `Thiếu ${formatMinutes(m.remainingMinutes)} (미달)`;
         offWorkers.push(
-          `• ${icon} **${dName}** (<@${did}>) ➔ \`${totalStr} / ${m.targetHours}h\` (${statusNote})`
+          `• ${icon} **${dName}** (<@${did}>) ➔ \`${totalStr} / ${targetStr}\` (${statusNote})`
         );
       } else {
         notStartedWorkers.push(
-          `• ⚪ **${dName}** (<@${did}>) ➔ Chưa vào ca / 미출근 *(0.0h / 8.0h)*`
+          `• ⚪ **${dName}** (<@${did}>) ➔ Chưa vào ca / 미출근 *(0.0h / ${targetStr})*`
         );
       }
     }
@@ -83,7 +89,7 @@ export async function execute(interaction) {
         );
       } else {
         const icon = m.isAchieved ? '🌟' : m.totalMinutes >= 240 ? '🟡' : '🔴';
-        const statusNote = m.isAchieved ? 'Đạt 8h SLA (달성)' : `Thiếu ${neededStr} (미달)`;
+        const statusNote = m.isAchieved ? `Đạt ${targetStr} SLA (달성)` : `Thiếu ${neededStr} (미달)`;
         offWorkers.push(
           `• ${icon} **${m.displayName}** (<@${m.discordId}>) ➔ \`${totalStr} / ${targetStr}\` (${statusNote})`
         );
@@ -105,29 +111,28 @@ export async function execute(interaction) {
   if (activeWorkers.length > 0) {
     embed.addFields({
       name: `🟢 ĐANG TRONG CA / 근무 진행 중 (${activeWorkers.length} người / 명)`,
-      value: activeWorkers.join('\n')
+      value: joinLinesSafe(activeWorkers)
     });
   }
 
   if (offWorkers.length > 0) {
     embed.addFields({
       name: `⚪ ĐÃ CÀY HÔM NAY - ĐANG NGHỈ / 휴식 중 (${offWorkers.length} người / 명)`,
-      value: offWorkers.join('\n')
+      value: joinLinesSafe(offWorkers)
     });
   }
 
   if (notStartedWorkers.length > 0) {
     embed.addFields({
       name: `🔴 CHƯA VÀO CA HÔM NAY / 미출근 (${notStartedWorkers.length} người / 명)`,
-      value: notStartedWorkers.join('\n')
+      value: joinLinesSafe(notStartedWorkers)
     });
   }
 
   embed.setFooter({ text: 'Gamefy Base Teams • Member Role Live Roster | 팀 인원 현황' });
   embed.setTimestamp();
 
-  return interaction.reply({
-    embeds: [embed],
-    ephemeral: true
+  return interaction.editReply({
+    embeds: [embed]
   });
 }

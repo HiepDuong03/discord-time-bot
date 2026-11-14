@@ -1,19 +1,10 @@
 import { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } from 'discord.js';
 import db from '../database/db.js';
 import { getDaySummaryForUser, getWorkDate } from '../services/shiftService.js';
-import { smartParseDate, buildDateAutocompleteChoices } from '../utils/dateUtils.js';
+import { smartParseDate, buildDateAutocompleteChoices, formatTimeInTz } from '../utils/dateUtils.js';
+import { formatMinutes } from '../utils/formatUtils.js';
 
-function formatMinutes(minutes) {
-  const m = Math.max(0, Math.round(minutes));
-  const hours = Math.floor(m / 60);
-  const remainingMins = m % 60;
-  const decimalHours = (m / 60).toFixed(2);
-
-  if (hours === 0) {
-    return `${remainingMins} phút / 분 (${decimalHours}h)`;
-  }
-  return `${hours}h ${remainingMins}p (${decimalHours}h)`;
-}
+const formatUserMins = (m) => formatMinutes(m, { bilingualUnderHour: true });
 
 export const data = new SlashCommandBuilder()
   .setName('check-user')
@@ -55,6 +46,8 @@ export async function execute(interaction) {
     targetDate = parsed;
   }
 
+  await interaction.deferReply({ ephemeral: true });
+
   const summary = await getDaySummaryForUser(targetUser.id, targetDate);
 
   // Lấy danh sách các ca làm của user trong ngày
@@ -67,20 +60,27 @@ export async function execute(interaction) {
   });
   const shifts = shiftsRes.rows;
 
-  const totalStr = formatMinutes(summary.totalMinutes);
-  const remainingStr = formatMinutes(summary.remainingMinutes);
-  const statusIcon = summary.isAchieved ? '✅ ĐẠT 8H (달성)' : '⚠️ THIẾU GIỜ (미달)';
+  const totalStr = formatUserMins(summary.totalMinutes);
+  const remainingStr = formatUserMins(summary.remainingMinutes);
+  const targetStr = Number(summary.targetHours).toFixed(1);
+  const statusIcon = summary.isAchieved ? `✅ ĐẠT ${targetStr}H (달성)` : '⚠️ THIẾU GIỜ (미달)';
 
   let shiftListStr = '';
   if (shifts.length === 0) {
     shiftListStr = '*Không có ca làm việc nào được ghi nhận trong ngày này / 해당 일자의 근무 기록이 없습니다.*';
   } else {
     shiftListStr = shifts.map((s, idx) => {
-      const inTime = new Date(s.check_in).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-      const outTime = s.check_out 
-        ? new Date(s.check_out).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+      if (s.status === 'ADJUSTED') {
+        const mins = Number(s.duration_minutes || 0);
+        const sign = mins > 0 ? '+' : '';
+        const note = s.note ? ` • *${s.note}*` : '';
+        return `**${idx + 1}.** 🛠️ \`[ĐIỀU CHỈNH]\` **${sign}${formatUserMins(mins)}**${note}`;
+      }
+      const inTime = formatTimeInTz(s.check_in);
+      const outTime = s.check_out
+        ? formatTimeInTz(s.check_out)
         : 'Đang cày (진행 중)';
-      const dur = s.duration_minutes ? formatMinutes(s.duration_minutes) : 'Đang chạy (진행 중)';
+      const dur = s.duration_minutes ? formatUserMins(s.duration_minutes) : 'Đang chạy (진행 중)';
       const acc = s.account_code ? `\`[${s.account_code}]\`` : '';
       const note = s.note ? ` • *${s.note}*` : '';
       return `**${idx + 1}.** ${acc} ${inTime} ➔ ${outTime} (**${dur}**)${note}`;
@@ -92,20 +92,19 @@ export async function execute(interaction) {
     .setDescription(
       `• **Nhân sự / 근무자:** <@${targetUser.id}> (${targetUser.username})\n` +
       `• **Ngày làm việc / 일자:** \`${targetDate}\`\n` +
-      `• **Tổng giờ / 총 근무:** \`${totalStr} / ${summary.targetHours}h\`\n` +
+      `• **Tổng giờ / 총 근무:** \`${totalStr} / ${targetStr}h\`\n` +
       `• **Trạng thái / 상태:** \`${statusIcon}\` (Thiếu / 잔여: ${remainingStr})\n\n` +
-      `-# 🎯 Tiêu chuẩn cá nhân: 8.0h/ngày • 🇰🇷 일일 개인 목표 8.0시간`
+      `-# 🎯 Tiêu chuẩn cá nhân: ${targetStr}h/ngày • 🇰🇷 일일 개인 목표 ${targetStr}시간`
     )
     .setColor('#00D8F6')
     .addFields({
       name: `📋 CHI TIẾT CÁC CA LÀM / 근무 세부 기록 (${shifts.length} ca / 회)`,
-      value: shiftListStr
+      value: shiftListStr.slice(0, 1020)
     })
     .setFooter({ text: 'Gamefy Base Teams • Employee Audit Service | 개인 감사' })
     .setTimestamp();
 
-  return interaction.reply({
-    embeds: [embed],
-    ephemeral: true
+  return interaction.editReply({
+    embeds: [embed]
   });
 }

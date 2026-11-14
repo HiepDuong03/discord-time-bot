@@ -3,18 +3,22 @@ import { config } from '../config/env.js';
 const pad2 = n => String(n).padStart(2, '0');
 
 /**
- * Lấy năm, tháng (1-12), ngày, thứ trong tuần (0=CN..6=T7) theo múi giờ cấu hình (Asia/Ho_Chi_Minh)
+ * Lấy năm, tháng (1-12), ngày, giờ (0-23), phút, giây, thứ (0=CN..6=T7) theo múi giờ cấu hình (Asia/Ho_Chi_Minh)
  */
-export function getDatePartsInTimezone(date = new Date(), timeZone = config.timezone) {
+export function getDateTimePartsInTimezone(date = new Date(), timeZone = config.timezone) {
+  const d = date instanceof Date ? date : new Date(date);
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
     weekday: 'short',
-    hour12: false
+    hourCycle: 'h23'
   });
-  const parts = formatter.formatToParts(date);
+  const parts = formatter.formatToParts(d);
   const map = {};
   for (const p of parts) {
     map[p.type] = p.value;
@@ -24,16 +28,85 @@ export function getDatePartsInTimezone(date = new Date(), timeZone = config.time
     year: parseInt(map.year, 10),
     month: parseInt(map.month, 10),
     day: parseInt(map.day, 10),
+    hour: parseInt(map.hour, 10) % 24,
+    minute: parseInt(map.minute, 10),
+    second: parseInt(map.second, 10),
     weekday: weekdayMap[map.weekday] ?? 0
   };
+}
+
+/**
+ * Lấy năm, tháng (1-12), ngày, thứ trong tuần (0=CN..6=T7) theo múi giờ cấu hình
+ */
+export function getDatePartsInTimezone(date = new Date(), timeZone = config.timezone) {
+  const { year, month, day, weekday } = getDateTimePartsInTimezone(date, timeZone);
+  return { year, month, day, weekday };
 }
 
 /**
  * Lấy chuỗi YYYY-MM-DD của ngày hiện tại theo múi giờ cấu hình
  */
 export function getTodayIso(date = new Date(), timeZone = config.timezone) {
-  const { year, month, day } = getDatePartsInTimezone(date, timeZone);
+  const { year, month, day } = getDateTimePartsInTimezone(date, timeZone);
   return `${year}-${pad2(month)}-${pad2(day)}`;
+}
+
+/**
+ * Tính ngày làm việc (work_date) theo múi giờ config.timezone và mốc cutoffHour (mặc định 06:00 sáng).
+ */
+export function getWorkDateIso(targetDate = new Date(), cutoffHour = config.cutoffHour, timeZone = config.timezone) {
+  const { year, month, day, hour } = getDateTimePartsInTimezone(targetDate, timeZone);
+  const todayIso = `${year}-${pad2(month)}-${pad2(day)}`;
+  if (hour < cutoffHour) {
+    return addDaysToIso(todayIso, -1);
+  }
+  return todayIso;
+}
+
+/**
+ * Tính số giờ còn lại tới mốc chốt ngày (cutoffHour:00:00) theo múi giờ config.timezone
+ */
+export function getHoursUntilCutoffInTz(now = new Date(), cutoffHour = config.cutoffHour, timeZone = config.timezone) {
+  const { hour, minute, second } = getDateTimePartsInTimezone(now, timeZone);
+  const currentSeconds = hour * 3600 + minute * 60 + second;
+  const cutoffSeconds = cutoffHour * 3600;
+  const diffSeconds = currentSeconds < cutoffSeconds
+    ? cutoffSeconds - currentSeconds
+    : (86400 - currentSeconds) + cutoffSeconds;
+  return Math.max(0, diffSeconds / 3600);
+}
+
+/**
+ * Format giờ HH:mm theo múi giờ config.timezone (dùng trong Discord embed/message)
+ */
+export function formatTimeInTz(dateInput, timeZone = config.timezone) {
+  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  return d.toLocaleTimeString('vi-VN', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  });
+}
+
+/**
+ * Format ngày giờ đầy đủ theo múi giờ config.timezone (ví dụ: '16:25:00 14/11/2026')
+ */
+export function formatDateTimeInTz(dateInput = new Date(), timeZone = config.timezone) {
+  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  return d.toLocaleString('vi-VN', {
+    timeZone,
+    hour12: false
+  });
+}
+
+/**
+ * Chuyển timestamp về đối tượng Date có thành phần UTC trùng với giờ tường tại config.timezone
+ * để ExcelJS hiển thị đúng giờ địa phương (thay vì hiển thị giờ UTC).
+ */
+export function toTimezoneExcelDate(dateInput, timeZone = config.timezone) {
+  const { year, month, day, hour, minute, second } = getDateTimePartsInTimezone(dateInput, timeZone);
+  return new Date(Date.UTC(year, month - 1, day, hour, minute, second));
 }
 
 /**

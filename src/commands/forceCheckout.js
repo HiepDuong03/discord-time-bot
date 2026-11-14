@@ -81,6 +81,8 @@ export async function execute(interaction) {
     });
   }
 
+  await interaction.deferReply({ ephemeral: false });
+
   try {
     let result;
     let targetName = '';
@@ -88,25 +90,24 @@ export async function execute(interaction) {
     if (targetUser) {
       result = await forceEndShiftByUser(targetUser.id, leaderName, reason);
       targetName = `<@${targetUser.id}>`;
-
-      // Gỡ role On-Shift nếu có
-      if (config.onShiftRoleId && interaction.guild) {
-        try {
-          const gm = await interaction.guild.members.fetch(targetUser.id);
-          if (gm) await gm.roles.remove(config.onShiftRoleId);
-        } catch {}
-      }
     } else {
       const cleanAcc = normalizeAccountCode(targetAccount);
       result = await forceReleaseAccount(cleanAcc, leaderName, reason);
-      targetName = `Nick \`[${cleanAcc}]\``;
+      targetName = result.userId ? `<@${result.userId}> (\`[${cleanAcc}]\`)` : `Nick \`[${cleanAcc}]\``;
     }
 
     if (!result.success) {
-      return interaction.reply({
-        content: `⚠️ **Thông báo / 알림:** ${result.message}`,
-        ephemeral: true
+      return interaction.editReply({
+        content: `⚠️ **Thông báo / 알림:** ${result.message}`
       });
+    }
+
+    // Gỡ role On-Shift cho user vừa bị chốt ca (cả khi chọn user lẫn chọn account)
+    if (config.onShiftRoleId && interaction.guild && result.userId) {
+      try {
+        const gm = await interaction.guild.members.fetch(result.userId);
+        if (gm) await gm.roles.remove(config.onShiftRoleId);
+      } catch {}
     }
 
     const embed = new EmbedBuilder()
@@ -124,12 +125,11 @@ export async function execute(interaction) {
       .setFooter({ text: 'Gamefy Base Teams • Force Checkout Service | 강제 퇴근 관리' })
       .setTimestamp();
 
-    return interaction.reply({ embeds: [embed] });
+    return interaction.editReply({ embeds: [embed] });
   } catch (error) {
     console.error('[FORCE CHECKOUT ERROR]', error);
-    return interaction.reply({
-      content: `❌ Lỗi khi cưỡng chế kết thúc ca / 오류 발생: ${error.message}`,
-      ephemeral: true
+    return interaction.editReply({
+      content: `❌ Lỗi khi cưỡng chế kết thúc ca / 오류 발생: ${error.message}`
     });
   }
 }
