@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS accounts (
     account_code TEXT PRIMARY KEY,
     daily_target_hours REAL DEFAULT 8.0,
+    is_active INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -39,8 +40,10 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Chỉ mục để tối ưu tốc độ truy vấn báo cáo
+-- Chỉ mục để tối ưu tốc độ truy vấn báo cáo & chống trùng ca ACTIVE
 CREATE INDEX IF NOT EXISTS idx_shifts_user_date ON shifts(user_id, work_date);
 CREATE INDEX IF NOT EXISTS idx_shifts_work_date ON shifts(work_date);
 CREATE INDEX IF NOT EXISTS idx_shifts_account_date ON shifts(account_code, work_date);
 CREATE INDEX IF NOT EXISTS idx_shifts_status ON shifts(status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_shifts_one_active_user ON shifts(user_id) WHERE status = 'ACTIVE';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_shifts_one_active_acc ON shifts(account_code) WHERE status = 'ACTIVE';

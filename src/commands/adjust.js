@@ -1,5 +1,10 @@
 import { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
-import { adjustShiftTime, registerOrUpdateUser } from '../services/shiftService.js';
+import {
+  adjustShiftTime,
+  registerOrUpdateUser,
+  getAllOfficialAccounts
+} from '../services/shiftService.js';
+import { smartParseDate, buildDateAutocompleteChoices } from '../utils/dateUtils.js';
 
 const MINUTE_PRESETS = [
   { name: '➕ +30 phút (0.5h)', value: 30 },
@@ -39,6 +44,18 @@ export const data = new SlashCommandBuilder()
       .setAutocomplete(true)
   )
   .addStringOption(option =>
+    option.setName('account')
+      .setDescription('Nick game áp dụng (bỏ trống sẽ tự lấy nick người đó cày trong ngày) / 적용 계정')
+      .setRequired(false)
+      .setAutocomplete(true)
+  )
+  .addStringOption(option =>
+    option.setName('date')
+      .setDescription('Ngày áp dụng (mặc định hôm nay, gõ 14/11 hoặc chọn gợi ý) / 적용 일자')
+      .setRequired(false)
+      .setAutocomplete(true)
+  )
+  .addStringOption(option =>
     option.setName('reason')
       .setDescription('Chọn lý do hoặc gõ tự do (mặc định tự điền) / 조정 사유')
       .setRequired(false)
@@ -71,6 +88,29 @@ export async function autocomplete(interaction) {
     return interaction.respond(choices.slice(0, 25)).catch(() => {});
   }
 
+  if (focusedOption.name === 'account') {
+    const accounts = await getAllOfficialAccounts().catch(() => []);
+    const choices = accounts
+      .filter(a => !query || a.account_code.toLowerCase().includes(query))
+      .slice(0, 24)
+      .map(a => ({
+        name: `${a.is_active === 1 ? '🟢' : '⚪'} ${a.account_code}`.slice(0, 100),
+        value: a.account_code.slice(0, 100)
+      }));
+
+    choices.push({
+      name: '👤 Chỉ tính cá nhân / Không gắn nick (DEFAULT_ACC)',
+      value: 'DEFAULT_ACC'
+    });
+
+    return interaction.respond(choices.slice(0, 25)).catch(() => {});
+  }
+
+  if (focusedOption.name === 'date') {
+    const suggestions = buildDateAutocompleteChoices(focusedOption.value, { includeRangeShortcuts: false });
+    return interaction.respond(suggestions).catch(() => {});
+  }
+
   if (focusedOption.name === 'reason') {
     const choices = ADJUST_REASONS
       .filter(r => !query || r.toLowerCase().includes(query))
@@ -82,6 +122,8 @@ export async function autocomplete(interaction) {
 export async function execute(interaction) {
   const targetUser = interaction.options.getUser('user');
   const minutes = interaction.options.getInteger('minutes');
+  const accountOption = interaction.options.getString('account')?.trim() || null;
+  const rawDate = interaction.options.getString('date')?.trim() || null;
   const reason = interaction.options.getString('reason')?.trim() || 'Quản lý điều chỉnh giờ thủ công';
   const leaderName = interaction.member?.displayName || interaction.user.username;
 
@@ -92,6 +134,17 @@ export async function execute(interaction) {
     });
   }
 
+  let parsedDate = null;
+  if (rawDate) {
+    parsedDate = smartParseDate(rawDate);
+    if (!parsedDate) {
+      return interaction.reply({
+        content: `❌ Ngày \`${rawDate}\` không hợp lệ! Hãy chọn từ gợi ý hoặc gõ \`14\`, \`14/11\`, \`2026-11-14\`.`,
+        ephemeral: true
+      });
+    }
+  }
+
   await interaction.deferReply({ ephemeral: false });
 
   try {
@@ -99,13 +152,14 @@ export async function execute(interaction) {
     const displayName = memberObj?.displayName || targetUser.globalName || targetUser.username;
     await registerOrUpdateUser(targetUser.id, displayName);
 
-    const result = await adjustShiftTime(targetUser.id, minutes, reason, leaderName);
+    const result = await adjustShiftTime(targetUser.id, minutes, reason, leaderName, accountOption, parsedDate);
     const sign = minutes > 0 ? '+' : '';
 
     const embed = new EmbedBuilder()
       .setTitle('⏱️ ĐIỀU CHỈNH GIỜ LÀM VIỆC | 근무 시간 조정 완료')
       .setDescription(
         `• **Nhân sự / 대상 작업자:** <@${targetUser.id}> (${targetUser.username})\n` +
+        `• **Nick áp dụng / 적용 계정:** \`[${result.accountCode}]\`\n` +
         `• **Thay đổi / 시간 변동:** **${sign}${minutes} phút / 분** (${(minutes / 60).toFixed(2)}h)\n` +
         `• **Ngày áp dụng / 적용 일자:** \`${result.workDate}\`\n` +
         `• **Người duyệt / 승인자:** **${leaderName}**\n` +

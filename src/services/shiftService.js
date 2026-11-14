@@ -1,6 +1,6 @@
 import db from '../database/db.js';
 import { config } from '../config/env.js';
-import { getWorkDateIso } from '../utils/dateUtils.js';
+import { getWorkDateIso, addDaysToIso } from '../utils/dateUtils.js';
 
 // Mốc chặn an toàn tối đa cho 1 ca cày liên tục (14 tiếng = 840 phút)
 const MAX_SHIFT_MINUTES = 14 * 60;
@@ -22,6 +22,56 @@ export function normalizeAccountCode(rawCode) {
  */
 export function getWorkDate(targetDate = new Date()) {
   return getWorkDateIso(targetDate, config.cutoffHour, config.timezone);
+}
+
+/**
+ * Tự động cắt các ca đang ACTIVE vắt qua mốc 06:00 sáng:
+ * - Chốt ca ngày cũ tại đúng mốc 06:00 sáng (tối đa MAX_SHIFT_MINUTES).
+ * - Nếu ca vẫn đang trong giới hạn hoạt động bình thường (< 14h và liền kề ngày hôm qua),
+ *   tự động mở nối tiếp ca mới từ 06:00 sáng cho ngày làm việc hôm nay.
+ */
+export async function splitOvernightActiveShifts(now = new Date()) {
+  const currentWorkDate = getWorkDate(now);
+  const res = await db.execute({
+    sql: `SELECT * FROM shifts WHERE status = 'ACTIVE' AND work_date < ?`,
+    args: [currentWorkDate]
+  });
+
+  if (res.rows.length === 0) return 0;
+
+  const cutoffHourPad = String(config.cutoffHour).padStart(2, '0');
+  const yesterdayWorkDate = addDaysToIso(currentWorkDate, -1);
+  let processed = 0;
+
+  for (const shift of res.rows) {
+    const nextDayIso = addDaysToIso(shift.work_date, 1);
+    const cutoffDate = new Date(`${nextDayIso}T${cutoffHourPad}:00:00+07:00`);
+    const checkInMs = new Date(shift.check_in).getTime();
+    const totalElapsedMinutes = Math.round((now.getTime() - checkInMs) / 60000);
+    const oldDurationMinutes = Math.min(
+      MAX_SHIFT_MINUTES,
+      Math.max(1, Math.round((cutoffDate.getTime() - checkInMs) / 60000))
+    );
+    const newNote = shift.note ? `${shift.note} • [Tự chốt 06:00]` : '[Tự chốt 06:00]';
+
+    await db.execute({
+      sql: `UPDATE shifts
+            SET check_out = ?, duration_minutes = ?, status = 'COMPLETED', note = ?
+            WHERE id = ? AND status = 'ACTIVE'`,
+      args: [cutoffDate.toISOString(), oldDurationMinutes, newNote, shift.id]
+    });
+
+    if (shift.work_date === yesterdayWorkDate && totalElapsedMinutes <= MAX_SHIFT_MINUTES) {
+      await db.execute({
+        sql: `INSERT INTO shifts (user_id, account_code, check_in, work_date, status, note)
+              VALUES (?, ?, ?, ?, 'ACTIVE', ?)`,
+        args: [shift.user_id, shift.account_code, cutoffDate.toISOString(), currentWorkDate, '[Ca nối tiếp sau 06:00]']
+      }).catch(() => {});
+    }
+    processed++;
+  }
+
+  return processed;
 }
 
 /**
@@ -85,6 +135,7 @@ export async function getActiveShiftByAccount(accountCode) {
 export async function startShiftWithAccount(discordId, displayName, accountCode, note = '') {
   const cleanAccount = normalizeAccountCode(accountCode);
 
+  await splitOvernightActiveShifts();
   await registerOrUpdateUser(discordId, displayName);
   await registerOrUpdateAccount(cleanAccount);
 
@@ -113,11 +164,25 @@ export async function startShiftWithAccount(discordId, displayName, accountCode,
   const workDate = getWorkDate(now);
   const checkInIso = now.toISOString();
 
-  const insertRes = await db.execute({
-    sql: `INSERT INTO shifts (user_id, account_code, check_in, work_date, status, note)
-          VALUES (?, ?, ?, ?, 'ACTIVE', ?)`,
-    args: [discordId, cleanAccount, checkInIso, workDate, note]
-  });
+  let insertRes;
+  try {
+    insertRes = await db.execute({
+      sql: `INSERT INTO shifts (user_id, account_code, check_in, work_date, status, note)
+            VALUES (?, ?, ?, ?, 'ACTIVE', ?)`,
+      args: [discordId, cleanAccount, checkInIso, workDate, note]
+    });
+  } catch (err) {
+    const raceActive = await getActiveShiftByAccount(cleanAccount);
+    if (raceActive) {
+      return {
+        success: false,
+        errorType: 'ACCOUNT_OCCUPIED',
+        occupantName: raceActive.display_name,
+        message: `Nick [${cleanAccount}] vừa được nhận bởi **${raceActive.display_name}** (<@${raceActive.user_id}>)!`
+      };
+    }
+    throw err;
+  }
 
   return {
     success: true,
@@ -132,6 +197,7 @@ export async function startShiftWithAccount(discordId, displayName, accountCode,
  * Kết thúc ca làm việc (Check-out)
  */
 export async function endShift(discordId) {
+  await splitOvernightActiveShifts();
   const activeShift = await getActiveShift(discordId);
   if (!activeShift) {
     return {
@@ -234,6 +300,7 @@ export async function forceReleaseAccount(accountCode, leaderName, reason) {
  * Thống kê tổng giờ làm của 1 Member trong ngày
  */
 export async function getDaySummaryForUser(discordId, workDate = getWorkDate()) {
+  await splitOvernightActiveShifts();
   const userRes = await db.execute({
     sql: 'SELECT daily_target_hours FROM users WHERE discord_id = ?',
     args: [discordId]
@@ -279,6 +346,7 @@ export async function getDaySummaryForUser(discordId, workDate = getWorkDate()) 
  * Thống kê tổng giờ cày của 1 NICK GAME trong ngày
  */
 export async function getAccountDailySummary(accountCode, workDate = getWorkDate()) {
+  await splitOvernightActiveShifts();
   const cleanCode = normalizeAccountCode(accountCode);
   const accRes = await db.execute({
     sql: 'SELECT daily_target_hours FROM accounts WHERE account_code = ?',
@@ -330,6 +398,7 @@ export async function getAccountDailySummary(accountCode, workDate = getWorkDate
  * Lấy danh sách toàn bộ các Nick Game và tiến độ ngày hôm nay (1 Single SQL Query siêu tốc)
  */
 export async function getAllAccountsTodaySummary(workDate = getWorkDate()) {
+  await splitOvernightActiveShifts();
   const sql = `
     SELECT 
       a.account_code,
@@ -350,12 +419,12 @@ export async function getAllAccountsTodaySummary(workDate = getWorkDate()) {
       SELECT s.id, s.account_code, s.check_in, s.user_id, u.display_name
       FROM shifts s
       JOIN users u ON s.user_id = u.discord_id
-      WHERE s.status = 'ACTIVE'
+      WHERE s.status = 'ACTIVE' AND s.work_date = ?
     ) act ON a.account_code = act.account_code
     WHERE a.is_active = 1
   `;
 
-  const res = await db.execute({ sql, args: [workDate] });
+  const res = await db.execute({ sql, args: [workDate, workDate] });
   const now = Date.now();
 
   const accounts = res.rows.map(row => {
@@ -566,13 +635,18 @@ export async function getAllStaffMembers() {
 }
 
 /**
- * Lấy tổng hợp giờ làm hôm nay của toàn đội
+ * Lấy tổng hợp giờ làm hôm nay của toàn đội (loại bỏ trùng lặp discord_id)
  */
 export async function getTeamTodaySummary(workDate = getWorkDate()) {
+  await splitOvernightActiveShifts();
   const usersRes = await db.execute({
-    sql: `SELECT discord_id, display_name FROM users
-          UNION
-          SELECT DISTINCT user_id as discord_id, user_id as display_name FROM shifts WHERE work_date = ?`,
+    sql: `SELECT discord_id, COALESCE(MAX(name_from_users), discord_id) AS display_name
+          FROM (
+            SELECT discord_id, display_name AS name_from_users FROM users
+            UNION ALL
+            SELECT DISTINCT user_id AS discord_id, NULL AS name_from_users FROM shifts WHERE work_date = ?
+          )
+          GROUP BY discord_id`,
     args: [workDate]
   });
 
@@ -590,16 +664,28 @@ export async function getTeamTodaySummary(workDate = getWorkDate()) {
 }
 
 /**
- * Điều chỉnh giờ làm việc
+ * Điều chỉnh giờ làm việc (hỗ trợ chọn Nick cụ thể và ngày làm việc cụ thể;
+ * nếu không truyền accountCode, tự động gắn vào Nick gần nhất mà nhân sự đã cày trong ngày đó)
  */
-export async function adjustShiftTime(userId, minutesChange, reason, adjustedBy, accountCode = 'DEFAULT_ACC') {
-  const workDate = getWorkDate();
-  const cleanAccount = normalizeAccountCode(accountCode);
+export async function adjustShiftTime(userId, minutesChange, reason, adjustedBy, accountCode = null, customWorkDate = null) {
+  const workDate = customWorkDate || getWorkDate();
+  let resolvedAcc = accountCode ? normalizeAccountCode(accountCode) : null;
 
+  if (!resolvedAcc) {
+    const recentRes = await db.execute({
+      sql: `SELECT account_code FROM shifts
+            WHERE user_id = ? AND work_date = ? AND account_code IS NOT NULL AND account_code != 'DEFAULT_ACC'
+            ORDER BY id DESC LIMIT 1`,
+      args: [userId, workDate]
+    });
+    resolvedAcc = recentRes.rows[0]?.account_code || 'DEFAULT_ACC';
+  }
+
+  const nowIso = new Date().toISOString();
   const insertShiftRes = await db.execute({
     sql: `INSERT INTO shifts (user_id, account_code, check_in, check_out, duration_minutes, work_date, status, note)
-          VALUES (?, ?, datetime('now'), datetime('now'), ?, ?, 'ADJUSTED', ?)`,
-    args: [userId, cleanAccount, minutesChange, workDate, `Điều chỉnh bởi ${adjustedBy}: ${reason}`]
+          VALUES (?, ?, ?, ?, ?, ?, 'ADJUSTED', ?)`,
+    args: [userId, resolvedAcc, nowIso, nowIso, minutesChange, workDate, `Điều chỉnh bởi ${adjustedBy}: ${reason}`]
   });
 
   const shiftId = Number(insertShiftRes.lastInsertRowid);
@@ -614,7 +700,7 @@ export async function adjustShiftTime(userId, minutesChange, reason, adjustedBy,
     success: true,
     minutesChange,
     workDate,
-    accountCode: cleanAccount
+    accountCode: resolvedAcc
   };
 }
 

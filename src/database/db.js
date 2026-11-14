@@ -19,6 +19,7 @@ export async function initDatabase() {
   try {
     const schemaPath = path.join(__dirname, 'schema.sql');
     const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+    await db.execute('ALTER TABLE accounts ADD COLUMN is_active INTEGER DEFAULT 1').catch(() => {});
     await db.executeMultiple(schemaSql);
     const mode = url.startsWith('file:') ? 'Local SQLite (File)' : 'Turso Cloud (libSQL 24/7)';
     console.log(`[DATABASE] ✅ Kết nối thành công Cơ Sở Dữ Liệu: ${mode}`);

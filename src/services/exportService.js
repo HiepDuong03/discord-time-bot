@@ -86,6 +86,8 @@ function setColumnWidths(ws, widths) {
   });
 }
 
+const MAX_SHIFT_HOURS = 14;
+
 /**
  * Tính số giờ của 1 bản ghi ca làm (dùng thống nhất cho summarizeShifts, cached formula result & Excel)
  */
@@ -94,7 +96,8 @@ function resolveShiftHours(shift) {
     return Number((Number(shift.durationMinutes || 0) / 60).toFixed(2));
   }
   if (!shift.checkOutDate) return null;
-  return Number(((shift.checkOutDate.getTime() - shift.checkInDate.getTime()) / (1000 * 3600)).toFixed(2));
+  const rawHours = (shift.checkOutDate.getTime() - shift.checkInDate.getTime()) / (1000 * 3600);
+  return Number(Math.min(MAX_SHIFT_HOURS, rawHours).toFixed(2));
 }
 
 /**
@@ -165,10 +168,21 @@ export async function exportTimesheetToExcel(fromDate, toDate, slaHours = 8) {
   });
   const rawShifts = rawShiftsRes.rows;
 
+  // Phân biệt tên nếu 2 discord_id khác nhau vô tình đặt trùng display_name
+  const nameToIds = new Map();
+  for (const r of rawShifts) {
+    const baseName = r.display_name || r.discord_id;
+    if (!nameToIds.has(baseName)) nameToIds.set(baseName, new Set());
+    nameToIds.get(baseName).add(String(r.discord_id));
+  }
+
   const shifts = rawShifts.map(s => {
+    const baseName = s.display_name || s.discord_id;
+    const isDupName = (nameToIds.get(baseName)?.size || 0) > 1;
+    const staffLabel = isDupName ? `${baseName} (${String(s.discord_id).slice(-4)})` : baseName;
     const mapped = {
       id: 'S' + String(s.id).padStart(4, '0'),
-      staff: s.display_name,
+      staff: staffLabel,
       discord_id: s.discord_id,
       nick: s.account_code,
       work_date: s.work_date,
@@ -221,7 +235,7 @@ export async function exportTimesheetToExcel(fromDate, toDate, slaHours = 8) {
       const durationHours = s.hours;
       const statusStr = s.checkOutDate ? 'Hoàn tất 완료' : 'Đang chạy 진행 중';
       row.getCell(7).value = durationHours !== null
-        ? { formula: `IF(F${r}="","",ROUND((F${r}-E${r})*24,2))`, result: durationHours }
+        ? { formula: `IF(F${r}="","",MIN(${MAX_SHIFT_HOURS},ROUND((F${r}-E${r})*24,2)))`, result: durationHours }
         : '';
       row.getCell(8).value = {
         formula: `IF(F${r}="","Đang chạy 진행 중","Hoàn tất 완료")`,

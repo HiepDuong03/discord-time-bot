@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import { EmbedBuilder } from 'discord.js';
 import { config } from '../config/env.js';
 import { getHoursUntilCutoffInTz } from '../utils/dateUtils.js';
-import { getTeamTodaySummary, getAllAccountsTodaySummary } from './shiftService.js';
+import { getTeamTodaySummary, getAllAccountsTodaySummary, splitOvernightActiveShifts } from './shiftService.js';
 
 export function getHoursUntilCutoff(now = new Date()) {
   return getHoursUntilCutoffInTz(now, config.cutoffHour, config.timezone);
@@ -223,6 +223,12 @@ export async function checkEmergencySlaDeficit(client, hourTag = '23') {
 }
 
 export function initReminderCron(client) {
+  // 06:00 sáng mỗi ngày: Tự động tách ca qua ngày mới (Overnight Shift Auto-Split)
+  cron.schedule('0 6 * * *', () => {
+    console.log('[CRON] 06:00 AM - Tự động chốt ca ngày cũ & mở nối tiếp ca ngày mới...');
+    splitOvernightActiveShifts().catch(err => console.error('[CRON 06:00 ERROR]', err));
+  }, { timezone: config.timezone });
+
   // 18:00 mỗi ngày: Nhắc nhở cá nhân
   cron.schedule('0 18 * * *', () => {
     console.log('[CRON] Chạy quét nhắc nhở 18:00 (Kênh + DM)...');
@@ -247,5 +253,5 @@ export function initReminderCron(client) {
     checkEmergencySlaDeficit(client, '02');
   }, { timezone: config.timezone });
 
-  console.log('[CRON] Đã kích hoạt lịch tự động: 18:00 (Nhắc nhở), 22:00 (Cảnh báo), 23:00 & 02:00 (Toán học vỡ SLA Nick).');
+  console.log('[CRON] Đã kích hoạt lịch tự động: 06:00 (Tách ca ngày mới), 18:00 (Nhắc nhở), 22:00 (Cảnh báo), 23:00 & 02:00 (Toán học vỡ SLA Nick).');
 }
