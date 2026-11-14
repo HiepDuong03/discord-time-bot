@@ -21,6 +21,7 @@ import * as checkUserCommand from './commands/checkUser.js';
 import * as accStatusCommand from './commands/accStatus.js';
 import * as forceCheckoutCommand from './commands/forceCheckout.js';
 import * as accManageCommand from './commands/accManage.js';
+import * as staffManageCommand from './commands/staffManage.js';
 
 console.log('====================================================');
 console.log('🤖 KHỞI ĐỘNG DISCORD BOT CHẤM CÔNG & QUẢN LÝ TEAM');
@@ -62,7 +63,8 @@ const commandList = [
   checkUserCommand,
   accStatusCommand,
   forceCheckoutCommand,
-  accManageCommand
+  accManageCommand,
+  staffManageCommand
 ];
 
 for (const cmd of commandList) {

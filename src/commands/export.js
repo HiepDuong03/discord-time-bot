@@ -1,68 +1,15 @@
 import { SlashCommandBuilder, PermissionFlagsBits, AttachmentBuilder, EmbedBuilder } from 'discord.js';
 import { exportTimesheetToExcel } from '../services/exportService.js';
+import {
+  smartParseDate,
+  getTodayIso,
+  getDatePartsInTimezone,
+  addDaysToIso,
+  getMonthRangeIso,
+  buildDateAutocompleteChoices
+} from '../utils/dateUtils.js';
 
-function formatDateIso(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-/**
- * Bộ phân tích ngày thông minh (Smart Date Parser)
- * Chấp nhận: số ngày '1', '27'; ngày/tháng '15/9', '15-09'; chuẩn '2026-10-01'; chuỗi dính '20261001'
- */
-export function smartParseDate(raw) {
-  if (!raw) return null;
-  const str = String(raw).trim();
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const pad = n => String(n).padStart(2, '0');
-
-  // 1. Nếu chỉ gõ 1-2 chữ số (ví dụ: '1', '15', '27') -> ngày trong tháng hiện tại
-  if (/^\d{1,2}$/.test(str)) {
-    const day = parseInt(str, 10);
-    if (day >= 1 && day <= 31) {
-      return `${y}-${pad(m + 1)}-${pad(day)}`;
-    }
-  }
-
-  // 2. Nếu gõ dạng ngày/tháng hoặc ngày-tháng (ví dụ: '15/9', '15-09', '15/10')
-  const dmMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})$/);
-  if (dmMatch) {
-    const day = parseInt(dmMatch[1], 10);
-    const month = parseInt(dmMatch[2], 10);
-    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
-      return `${y}-${pad(month)}-${pad(day)}`;
-    }
-  }
-
-  // 3. Chuỗi 8 số liền nhau (ví dụ: '20261001')
-  const digits = str.replace(/\D/g, '');
-  if (digits.length === 8 && (digits.startsWith('202') || digits.startsWith('203'))) {
-    return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
-  }
-
-  // 4. Định dạng chuẩn YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
-    return str;
-  }
-
-  // 5. Nếu có lỗi nhảy phím lặp số đầu kiểu '2202610...'
-  if (str.length > 8) {
-    const yearMatch = str.match(/(202\d)/);
-    if (yearMatch) {
-      const yearIdx = str.indexOf(yearMatch[1]);
-      const cleanSub = str.slice(yearIdx).replace(/\D/g, '');
-      if (cleanSub.length >= 8) {
-        return `${cleanSub.slice(0, 4)}-${cleanSub.slice(4, 6)}-${cleanSub.slice(6, 8)}`;
-      }
-    }
-  }
-
-  return null;
-}
+export { smartParseDate };
 
 export const data = new SlashCommandBuilder()
   .setName('export')
@@ -100,68 +47,10 @@ export const data = new SlashCommandBuilder()
  */
 export async function autocomplete(interaction) {
   const focusedOption = interaction.options.getFocused(true);
-  const query = focusedOption.value.trim().toLowerCase();
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth();
-
-  const pad = n => String(n).padStart(2, '0');
-  const formatIso = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
-
-  const suggestions = [];
-
   if (focusedOption.name === 'from' || focusedOption.name === 'to') {
-    if (!query) {
-      const todayIso = formatIso(currentYear, currentMonth, now.getDate());
-      const firstDayThisMonth = formatIso(currentYear, currentMonth, 1);
-
-      const yesterday = new Date(now);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayIso = formatIso(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate());
-
-      const sevenDaysAgo = new Date(now);
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      const sevenDaysAgoIso = formatIso(sevenDaysAgo.getFullYear(), sevenDaysAgo.getMonth(), sevenDaysAgo.getDate());
-
-      const firstDayLastMonth = formatIso(currentYear, currentMonth - 1, 1);
-      const lastDayLastMonthObj = new Date(currentYear, currentMonth, 0);
-      const lastDayLastMonth = formatIso(lastDayLastMonthObj.getFullYear(), lastDayLastMonthObj.getMonth(), lastDayLastMonthObj.getDate());
-
-      suggestions.push(
-        { name: `📅 Hôm nay (${todayIso})`, value: todayIso },
-        { name: `📅 Đầu tháng này (${firstDayThisMonth})`, value: firstDayThisMonth },
-        { name: `⏮️ Hôm qua (${yesterdayIso})`, value: yesterdayIso },
-        { name: `⏮️ 7 ngày trước (${sevenDaysAgoIso})`, value: sevenDaysAgoIso },
-        { name: `🗓️ Đầu tháng trước (${firstDayLastMonth})`, value: firstDayLastMonth },
-        { name: `🗓️ Cuối tháng trước (${lastDayLastMonth})`, value: lastDayLastMonth }
-      );
-    } else {
-      const num = parseInt(query, 10);
-      if (!isNaN(num) && num >= 1 && num <= 31) {
-        const thisMonthDate = formatIso(currentYear, currentMonth, num);
-        suggestions.push({
-          name: `📅 Ngày ${num} tháng này (${thisMonthDate})`,
-          value: thisMonthDate
-        });
-
-        const lastMonthDate = formatIso(currentYear, currentMonth - 1, num);
-        suggestions.push({
-          name: `🗓️ Ngày ${num} tháng trước (${lastMonthDate})`,
-          value: lastMonthDate
-        });
-      }
-
-      if (query.length >= 4) {
-        const cleanDigits = query.replace(/\D/g, '');
-        if (cleanDigits.length === 8) {
-          const formatted = `${cleanDigits.slice(0, 4)}-${cleanDigits.slice(4, 6)}-${cleanDigits.slice(6, 8)}`;
-          suggestions.push({ name: `📅 Chọn ngày: ${formatted}`, value: formatted });
-        }
-      }
-    }
+    const suggestions = buildDateAutocompleteChoices(focusedOption.value, { includeRangeShortcuts: true });
+    await interaction.respond(suggestions).catch(() => {});
   }
-
-  await interaction.respond(suggestions.slice(0, 25)).catch(() => {});
 }
 
 export async function execute(interaction) {
@@ -172,74 +61,76 @@ export async function execute(interaction) {
   let fromDate = null;
   let toDate = null;
   const now = new Date();
+  const todayIso = getTodayIso(now);
+  const { year: curYear, month: curMonth, weekday } = getDatePartsInTimezone(now);
 
   // 1. Ưu tiên Preset nếu có chọn
   if (preset) {
     if (preset === 'today') {
-      const t = formatDateIso(now);
-      fromDate = t;
-      toDate = t;
+      fromDate = todayIso;
+      toDate = todayIso;
     } else if (preset === 'this_week') {
-      const d = new Date(now);
-      const day = d.getDay();
-      const diff = day === 0 ? -6 : 1 - day;
-      d.setDate(d.getDate() + diff);
-      fromDate = formatDateIso(d);
-      toDate = formatDateIso(now);
+      const diffToMon = weekday === 0 ? -6 : 1 - weekday;
+      fromDate = addDaysToIso(todayIso, diffToMon);
+      toDate = todayIso;
     } else if (preset === 'last_week') {
-      const d = new Date(now);
-      const day = d.getDay();
-      const diffToThisMon = day === 0 ? -6 : 1 - day;
-      const lastMon = new Date(now);
-      lastMon.setDate(now.getDate() + diffToThisMon - 7);
-      const lastSun = new Date(now);
-      lastSun.setDate(now.getDate() + diffToThisMon - 1);
-      fromDate = formatDateIso(lastMon);
-      toDate = formatDateIso(lastSun);
+      const diffToThisMon = weekday === 0 ? -6 : 1 - weekday;
+      fromDate = addDaysToIso(todayIso, diffToThisMon - 7);
+      toDate = addDaysToIso(todayIso, diffToThisMon - 1);
     } else if (preset === 'last_month') {
-      const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const last = new Date(now.getFullYear(), now.getMonth(), 0);
-      fromDate = formatDateIso(first);
-      toDate = formatDateIso(last);
+      const prevMonth = curMonth === 1 ? 12 : curMonth - 1;
+      const prevYear = curMonth === 1 ? curYear - 1 : curYear;
+      const range = getMonthRangeIso(prevYear, prevMonth);
+      fromDate = range.from;
+      toDate = range.to;
     } else if (preset === 'last_7_days') {
-      const d = new Date(now);
-      d.setDate(d.getDate() - 7);
-      fromDate = formatDateIso(d);
-      toDate = formatDateIso(now);
+      fromDate = addDaysToIso(todayIso, -6);
+      toDate = todayIso;
     } else if (preset === 'last_30_days') {
-      const d = new Date(now);
-      d.setDate(d.getDate() - 30);
-      fromDate = formatDateIso(d);
-      toDate = formatDateIso(now);
+      fromDate = addDaysToIso(todayIso, -29);
+      toDate = todayIso;
     } else {
       // this_month
-      const first = new Date(now.getFullYear(), now.getMonth(), 1);
-      fromDate = formatDateIso(first);
-      toDate = formatDateIso(now);
+      fromDate = getMonthRangeIso(curYear, curMonth).from;
+      toDate = todayIso;
     }
   } else if (rawFrom || rawTo) {
-    // 2. Người dùng nhập from / to tự do
-    fromDate = smartParseDate(rawFrom);
-    toDate = smartParseDate(rawTo) || formatDateIso(now);
+    // 2. Người dùng nhập from / to tự do hoặc chọn autocomplete
+    if (rawFrom) {
+      fromDate = smartParseDate(rawFrom);
+      if (!fromDate) {
+        return interaction.reply({
+          content: `❌ Giá trị "Từ ngày" (\`${rawFrom}\`) không hợp lệ!\n👉 Bạn có thể gõ \`15\`, \`15/11\`, \`2026-11-15\` hoặc click chọn từ danh sách gợi ý.`,
+          ephemeral: true
+        });
+      }
+    }
+
+    if (rawTo) {
+      toDate = smartParseDate(rawTo);
+      if (!toDate) {
+        return interaction.reply({
+          content: `❌ Giá trị "Đến ngày" (\`${rawTo}\`) không hợp lệ!\n👉 Bạn có thể gõ \`15\`, \`15/11\`, \`2026-11-15\` hoặc click chọn từ danh sách gợi ý.`,
+          ephemeral: true
+        });
+      }
+    } else {
+      toDate = todayIso;
+    }
 
     if (!fromDate) {
-      return interaction.reply({
-        content: `❌ Giá trị "Từ ngày" (\`${rawFrom}\`) không hợp lệ!\n👉 Bạn có thể gõ số ngày đơn giản (ví dụ: \`1\`, \`15\`) hoặc click chọn gợi ý.`,
-        ephemeral: true
-      });
+      fromDate = `${toDate.slice(0, 7)}-01`;
     }
 
     if (fromDate > toDate) {
-      // Đảo lại nếu nhập ngược
       const temp = fromDate;
       fromDate = toDate;
       toDate = temp;
     }
   } else {
     // 3. Mặc định: Từ ngày 01 tháng này đến hôm nay
-    const first = new Date(now.getFullYear(), now.getMonth(), 1);
-    fromDate = formatDateIso(first);
-    toDate = formatDateIso(now);
+    fromDate = getMonthRangeIso(curYear, curMonth).from;
+    toDate = todayIso;
   }
 
   await interaction.deferReply({ ephemeral: false });

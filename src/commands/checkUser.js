@@ -1,6 +1,7 @@
 import { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } from 'discord.js';
 import db from '../database/db.js';
 import { getDaySummaryForUser, getWorkDate } from '../services/shiftService.js';
+import { smartParseDate, buildDateAutocompleteChoices } from '../utils/dateUtils.js';
 
 function formatMinutes(minutes) {
   const m = Math.max(0, Math.round(minutes));
@@ -25,14 +26,34 @@ export const data = new SlashCommandBuilder()
   )
   .addStringOption(option =>
     option.setName('date')
-      .setDescription('Ngày cần xem (YYYY-MM-DD, mặc định hôm nay / 조회 일자)')
+      .setDescription('Chọn ngày gợi ý hoặc gõ (14, 14/11, 2026-11-14) / 조회 일자')
       .setRequired(false)
+      .setAutocomplete(true)
   );
+
+export async function autocomplete(interaction) {
+  const focusedOption = interaction.options.getFocused(true);
+  if (focusedOption.name === 'date') {
+    const suggestions = buildDateAutocompleteChoices(focusedOption.value, { includeRangeShortcuts: false });
+    await interaction.respond(suggestions).catch(() => {});
+  }
+}
 
 export async function execute(interaction) {
   const targetUser = interaction.options.getUser('user');
   const customDate = interaction.options.getString('date');
-  const targetDate = customDate ? customDate.trim() : getWorkDate();
+  let targetDate = getWorkDate();
+
+  if (customDate) {
+    const parsed = smartParseDate(customDate);
+    if (!parsed) {
+      return interaction.reply({
+        content: `❌ Ngày \`${customDate}\` không hợp lệ!\n👉 Hãy chọn từ danh sách gợi ý hoặc gõ \`14\`, \`14/11\`, \`2026-11-14\`.`,
+        ephemeral: true
+      });
+    }
+    targetDate = parsed;
+  }
 
   const summary = await getDaySummaryForUser(targetUser.id, targetDate);
 

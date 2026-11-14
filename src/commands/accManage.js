@@ -12,11 +12,12 @@ export const data = new SlashCommandBuilder()
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
   .addSubcommand(sub =>
     sub.setName('add')
-      .setDescription('Thêm nick game mới vào danh mục hoạt động / 계정 추가')
+      .setDescription('Thêm hoặc bật lại nick game chính thức / 계정 추가')
       .addStringOption(opt =>
         opt.setName('code')
-          .setDescription('Mã hoặc Tên Nick Game (Ví dụ: Acc_01, Acc_02, Nam_01)')
+          .setDescription('Chọn nick đang tắt để bật lại hoặc gõ mã mới (vd: ACC_08_HUNG)')
           .setRequired(true)
+          .setAutocomplete(true)
       )
       .addNumberOption(opt =>
         opt.setName('target')
@@ -55,15 +56,37 @@ export const data = new SlashCommandBuilder()
   );
 
 /**
- * Gợi ý danh sách Nick Game từ Database cho subcommand remove / delete
+ * Gợi ý danh sách Nick Game từ Database cho subcommand add / remove / delete
  */
 export async function autocomplete(interaction) {
   const focused = interaction.options.getFocused(true);
   if (focused.name !== 'code') return;
 
   const sub = interaction.options.getSubcommand(false);
-  const query = focused.value.trim().toLowerCase();
+  const rawQuery = focused.value.trim();
+  const query = rawQuery.toLowerCase();
+  const cleanQuery = rawQuery.replace(/^[<\s]+|[>\s]+$/g, '').toUpperCase();
   const accounts = await getAllOfficialAccounts();
+
+  if (sub === 'add') {
+    const inactiveChoices = accounts
+      .filter(a => a.is_active === 0)
+      .filter(a => !query || a.account_code.toLowerCase().includes(query) || a.account_code.replace(/^<|>$/g, '').toLowerCase().includes(query))
+      .slice(0, 24)
+      .map(a => ({
+        name: `♻️ Bật lại nick đang tắt • ${a.account_code} (${Number(a.daily_target_hours).toFixed(1)}h)`.slice(0, 100),
+        value: a.account_code.slice(0, 100)
+      }));
+
+    if (cleanQuery && !accounts.some(a => a.account_code.toUpperCase() === cleanQuery || a.account_code.replace(/^<|>$/g, '').toUpperCase() === cleanQuery)) {
+      inactiveChoices.unshift({
+        name: `➕ Tạo nick mới: ${cleanQuery}`.slice(0, 100),
+        value: cleanQuery.slice(0, 100)
+      });
+    }
+
+    return interaction.respond(inactiveChoices.slice(0, 25)).catch(() => {});
+  }
 
   const filtered = accounts
     .filter(a => (sub === 'remove' ? a.is_active === 1 : true))
@@ -84,9 +107,20 @@ export async function autocomplete(interaction) {
 export async function execute(interaction) {
   const subcommand = interaction.options.getSubcommand();
 
-  // 1. THÊM NICK MỚI
+  // 1. THÊM NICK MỚI (hoặc bật lại nick đang tắt)
   if (subcommand === 'add') {
-    const code = interaction.options.getString('code').trim();
+    const rawCode = interaction.options.getString('code').trim();
+    const accounts = await getAllOfficialAccounts();
+    const matchedExisting = accounts.find(a => a.account_code.toUpperCase() === rawCode.toUpperCase());
+    const code = matchedExisting ? matchedExisting.account_code : rawCode.replace(/^[<\s]+|[>\s]+$/g, '').trim();
+
+    if (!code) {
+      return interaction.reply({
+        content: '❌ Mã Nick Game không hợp lệ (không được để trống hoặc chỉ chứa `<>`).',
+        ephemeral: true
+      });
+    }
+
     const targetHours = interaction.options.getNumber('target') || 8.0;
 
     const result = await addOfficialAccount(code, targetHours);

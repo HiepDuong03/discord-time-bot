@@ -503,6 +503,70 @@ export async function getAllOfficialAccounts() {
 }
 
 /**
+ * Lấy danh sách các ca đang cày (ACTIVE) kèm tên nhân viên để Autocomplete cho /force-checkout
+ */
+export async function getAllActiveShifts() {
+  const res = await db.execute({
+    sql: `SELECT s.id, s.user_id, COALESCE(u.display_name, s.user_id) AS display_name, s.account_code, s.check_in, s.work_date
+          FROM shifts s
+          LEFT JOIN users u ON s.user_id = u.discord_id
+          WHERE s.status = 'ACTIVE'
+          ORDER BY s.check_in ASC`
+  });
+  return res.rows;
+}
+
+/**
+ * Thêm hoặc cập nhật nhân viên trong DB
+ */
+export async function upsertStaffMember(discordId, displayName, targetHours = config.dailyTargetHours) {
+  await db.execute({
+    sql: `INSERT INTO users (discord_id, display_name, daily_target_hours)
+          VALUES (?, ?, ?)
+          ON CONFLICT(discord_id) DO UPDATE SET
+            display_name = excluded.display_name,
+            daily_target_hours = excluded.daily_target_hours`,
+    args: [discordId, displayName, targetHours]
+  });
+  return { discordId, displayName, targetHours };
+}
+
+/**
+ * Xóa bản ghi nhân viên khỏi bảng users nếu chưa có lịch sử ca làm việc (giữ toàn vẹn khóa ngoại)
+ */
+export async function removeStaffRecordIfUnused(discordId) {
+  const countRes = await db.execute({
+    sql: 'SELECT COUNT(*) as cnt FROM shifts WHERE user_id = ?',
+    args: [discordId]
+  });
+  const shiftCount = Number(countRes.rows[0]?.cnt || 0);
+  if (shiftCount > 0) {
+    return { removedFromDb: false, shiftCount };
+  }
+  const delRes = await db.execute({
+    sql: 'DELETE FROM users WHERE discord_id = ?',
+    args: [discordId]
+  });
+  return { removedFromDb: (delRes.rowsAffected || 0) > 0, shiftCount: 0 };
+}
+
+/**
+ * Lấy danh sách toàn bộ nhân viên đã lưu trong DB kèm số ca làm việc
+ */
+export async function getAllStaffMembers() {
+  const res = await db.execute({
+    sql: `SELECT u.discord_id, u.display_name, u.daily_target_hours, u.created_at,
+                 COUNT(s.id) AS total_shifts,
+                 SUM(CASE WHEN s.status = 'ACTIVE' THEN 1 ELSE 0 END) AS active_shifts
+          FROM users u
+          LEFT JOIN shifts s ON u.discord_id = s.user_id
+          GROUP BY u.discord_id
+          ORDER BY active_shifts DESC, u.display_name ASC`
+  });
+  return res.rows;
+}
+
+/**
  * Lấy tổng hợp giờ làm hôm nay của toàn đội
  */
 export async function getTeamTodaySummary(workDate = getWorkDate()) {
