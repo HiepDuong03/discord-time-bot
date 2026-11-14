@@ -443,6 +443,56 @@ export async function removeOfficialAccount(accountCode) {
 }
 
 /**
+ * Xóa vĩnh viễn một Nick game khỏi bảng accounts trong Database (Hard Delete)
+ * @param {string} accountCode
+ * @param {boolean} deleteShiftHistory - Nếu true sẽ xóa luôn các ca làm cũ của nick này
+ */
+export async function deleteOfficialAccount(accountCode, deleteShiftHistory = false) {
+  const cleanCode = normalizeAccountCode(accountCode);
+
+  const activeShift = await getActiveShiftByAccount(cleanCode);
+  if (activeShift) {
+    return {
+      success: false,
+      message: `Không thể xóa Nick [${cleanCode}] vì đang có người cày (${activeShift.display_name}). Vui lòng dùng /force-checkout chốt ca trước!`
+    };
+  }
+
+  const existing = await db.execute({
+    sql: 'SELECT account_code FROM accounts WHERE account_code = ?',
+    args: [cleanCode]
+  });
+  if (existing.rows.length === 0) {
+    return { success: false, message: `Không tìm thấy Nick [${cleanCode}] trong hệ thống.` };
+  }
+
+  const shiftCountRes = await db.execute({
+    sql: 'SELECT COUNT(*) as cnt FROM shifts WHERE account_code = ?',
+    args: [cleanCode]
+  });
+  const shiftCount = Number(shiftCountRes.rows[0]?.cnt || 0);
+
+  if (deleteShiftHistory && shiftCount > 0) {
+    await db.execute({
+      sql: 'DELETE FROM shifts WHERE account_code = ?',
+      args: [cleanCode]
+    });
+  }
+
+  await db.execute({
+    sql: 'DELETE FROM accounts WHERE account_code = ?',
+    args: [cleanCode]
+  });
+
+  return {
+    success: true,
+    accountCode: cleanCode,
+    deletedShifts: deleteShiftHistory ? shiftCount : 0,
+    preservedShifts: deleteShiftHistory ? 0 : shiftCount
+  };
+}
+
+/**
  * Lấy toàn bộ danh sách Nick Game (cả active và inactive) cho Admin quản lý
  */
 export async function getAllOfficialAccounts() {

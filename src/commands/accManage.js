@@ -1,7 +1,8 @@
 import { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
 import { 
   addOfficialAccount, 
-  removeOfficialAccount, 
+  removeOfficialAccount,
+  deleteOfficialAccount,
   getAllOfficialAccounts 
 } from '../services/shiftService.js';
 
@@ -25,17 +26,60 @@ export const data = new SlashCommandBuilder()
   )
   .addSubcommand(sub =>
     sub.setName('remove')
-      .setDescription('Gỡ/Xóa nick game khỏi danh mục hoạt động / 계정 삭제')
+      .setDescription('Tắt tạm thời nick game (vẫn giữ bảng lương cũ) / 계정 비활성화')
       .addStringOption(opt =>
         opt.setName('code')
-          .setDescription('Mã Nick Game cần gỡ')
+          .setDescription('Chọn hoặc nhập mã Nick Game cần tắt')
           .setRequired(true)
+          .setAutocomplete(true)
+      )
+  )
+  .addSubcommand(sub =>
+    sub.setName('delete')
+      .setDescription('Xóa vĩnh viễn nick game khỏi Database / DB에서 계정 영구 삭제')
+      .addStringOption(opt =>
+        opt.setName('code')
+          .setDescription('Chọn hoặc nhập mã Nick Game cần xóa hẳn')
+          .setRequired(true)
+          .setAutocomplete(true)
+      )
+      .addBooleanOption(opt =>
+        opt.setName('delete_shifts')
+          .setDescription('Xóa luôn lịch sử ca cũ của nick này? (Mặc định: Không, để giữ bảng lương)')
+          .setRequired(false)
       )
   )
   .addSubcommand(sub =>
     sub.setName('list')
       .setDescription('Xem toàn bộ danh sách nick game đang quản lý / 계정 목록')
   );
+
+/**
+ * Gợi ý danh sách Nick Game từ Database cho subcommand remove / delete
+ */
+export async function autocomplete(interaction) {
+  const focused = interaction.options.getFocused(true);
+  if (focused.name !== 'code') return;
+
+  const sub = interaction.options.getSubcommand(false);
+  const query = focused.value.trim().toLowerCase();
+  const accounts = await getAllOfficialAccounts();
+
+  const filtered = accounts
+    .filter(a => (sub === 'remove' ? a.is_active === 1 : true))
+    .filter(a => !query || a.account_code.toLowerCase().includes(query))
+    .slice(0, 25)
+    .map(a => {
+      const statusLabel = a.is_active === 1 ? '🟢 Đang bật' : '⚪ Đã tắt';
+      const label = `${statusLabel} • ${a.account_code} (${Number(a.daily_target_hours).toFixed(1)}h)`;
+      return {
+        name: label.slice(0, 100),
+        value: a.account_code.slice(0, 100)
+      };
+    });
+
+  await interaction.respond(filtered).catch(() => {});
+}
 
 export async function execute(interaction) {
   const subcommand = interaction.options.getSubcommand();
@@ -94,13 +138,44 @@ export async function execute(interaction) {
     return interaction.reply({ embeds: [embed] });
   }
 
-  // 3. XEM DANH SÁCH NICK
+  // 3. XÓA VĨNH VIỄN NICK KHỎI DB (HARD DELETE)
+  if (subcommand === 'delete') {
+    const code = interaction.options.getString('code').trim();
+    const deleteShifts = interaction.options.getBoolean('delete_shifts') || false;
+    const result = await deleteOfficialAccount(code, deleteShifts);
+
+    if (!result.success) {
+      return interaction.reply({
+        content: `❌ ${result.message}`,
+        ephemeral: true
+      });
+    }
+
+    const shiftHistoryNote = deleteShifts
+      ? `🧹 Đã xóa luôn **${result.deletedShifts}** ca làm lịch sử của nick này.`
+      : `🛡️ Đã giữ lại **${result.preservedShifts}** ca làm cũ để không ảnh hưởng bảng lương đã chốt.`;
+
+    const embed = new EmbedBuilder()
+      .setTitle('💥 ĐÃ XÓA VĨNH VIỄN NICK GAME KHỎI DB | 계정 영구 삭제 완료')
+      .setDescription(
+        `> **Mã Nick đã xóa / 삭제된 계정:** \`[${result.accountCode}]\`\n\n` +
+        `${shiftHistoryNote}\n` +
+        `-# 🇰🇷 계정이 데이터베이스에서 영구 삭제되었습니다.`
+      )
+      .setColor('#ED4245')
+      .setFooter({ text: 'Gamefy Base Teams • Account Management | 계정 관리' })
+      .setTimestamp();
+
+    return interaction.reply({ embeds: [embed] });
+  }
+
+  // 4. XEM DANH SÁCH NICK
   if (subcommand === 'list') {
     const accounts = await getAllOfficialAccounts();
 
     if (accounts.length === 0) {
       return interaction.reply({
-        content: 'ℹ️ Chưa có Nick game nào trong danh mục. Dùng `/acc-manage add code:<tên>` để thêm!\n*(등록된 계정이 없습니다. /acc-manage add 명령어로 추가하세요.)*',
+        content: 'ℹ️ Chưa có Nick game nào trong danh mục. Dùng `/acc-manage add code:Acc_01` để thêm!\n*(등록된 계정이 없습니다. /acc-manage add 명령어로 추가하세요.)*',
         ephemeral: true
       });
     }
@@ -113,8 +188,8 @@ export async function execute(interaction) {
       .setDescription(
         `• **Tổng số Nick / 총 계정 수:** \`${accounts.length}\` (${activeList.length} đang bật 활성, ${inactiveList.length} đã tắt 비활성)\n` +
         `• **Chỉ tiêu chuẩn / 기본 목표:** \`8.0h / ngày / nick (일일 8시간)\`\n\n` +
-        `-# 💡 Dùng lệnh \`/acc-manage add\` để thêm mới hoặc \`/acc-manage remove\` để gỡ.\n` +
-        `-# 🇰🇷 /acc-manage add (계정 추가), /acc-manage remove (계정 비활성화)`
+        `-# 💡 Dùng \`/acc-manage add\` (thêm), \`remove\` (tắt tạm) hoặc \`delete\` (xóa hẳn khỏi DB).\n` +
+        `-# 🇰🇷 /acc-manage add (추가), remove (비활성화), delete (영구 삭제)`
       )
       .setColor('#5865F2')
       .setFooter({ text: 'Gamefy Base Teams • Account Management | 계정 관리' })
