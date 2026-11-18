@@ -723,6 +723,79 @@ export async function getTeamTodaySummary(workDate = getWorkDate()) {
 }
 
 /**
+ * Tổng hợp giờ làm của toàn đội trong 1 khoảng ngày (fromDate -> toDate)
+ */
+export async function getTeamRangeSummary(fromDate, toDate) {
+  await splitOvernightActiveShifts();
+  const sql = `
+    SELECT
+      roster.discord_id,
+      COALESCE(u.display_name, roster.discord_id) AS display_name,
+      u.daily_target_hours,
+      COALESCE(cs.completed_minutes, 0) AS completed_minutes,
+      COALESCE(cs.active_days, 0) AS completed_days,
+      COALESCE(cs.shift_count, 0) AS shift_count,
+      act.id AS active_shift_id,
+      act.check_in AS active_check_in,
+      act.work_date AS active_work_date
+    FROM (
+      SELECT discord_id FROM users
+      UNION
+      SELECT DISTINCT user_id AS discord_id FROM shifts WHERE work_date >= ? AND work_date <= ?
+    ) roster
+    LEFT JOIN users u ON roster.discord_id = u.discord_id
+    LEFT JOIN (
+      SELECT
+        user_id,
+        SUM(CASE WHEN status IN ('COMPLETED', 'ADJUSTED') THEN duration_minutes ELSE 0 END) AS completed_minutes,
+        COUNT(DISTINCT CASE WHEN (status IN ('COMPLETED', 'ADJUSTED') AND duration_minutes > 0) OR status = 'ACTIVE' THEN work_date END) AS active_days,
+        COUNT(id) AS shift_count
+      FROM shifts
+      WHERE work_date >= ? AND work_date <= ?
+      GROUP BY user_id
+    ) cs ON roster.discord_id = cs.user_id
+    LEFT JOIN (
+      SELECT id, user_id, check_in, work_date
+      FROM shifts
+      WHERE status = 'ACTIVE' AND work_date >= ? AND work_date <= ?
+    ) act ON roster.discord_id = act.user_id
+  `;
+  const res = await db.execute({ sql, args: [fromDate, toDate, fromDate, toDate, fromDate, toDate] });
+  const now = Date.now();
+
+  const team = res.rows.map(row => {
+    const targetHours = row.daily_target_hours ? Number(row.daily_target_hours) : config.dailyTargetHours;
+    const completedMinutes = Number(row.completed_minutes || 0);
+    let activeMinutes = 0;
+
+    if (row.active_shift_id) {
+      const diffMs = now - new Date(row.active_check_in).getTime();
+      activeMinutes = Math.min(MAX_SHIFT_MINUTES, Math.max(0, Math.round(diffMs / 60000)));
+    }
+
+    const totalMinutes = completedMinutes + activeMinutes;
+    const activeDays = Number(row.completed_days || 0);
+    const shiftCount = Number(row.shift_count || 0);
+    const avgMinutesPerDay = activeDays > 0 ? Math.round(totalMinutes / activeDays) : 0;
+
+    return {
+      discordId: row.discord_id,
+      displayName: row.display_name,
+      targetHours,
+      completedMinutes,
+      activeMinutes,
+      totalMinutes,
+      activeDays,
+      shiftCount,
+      avgMinutesPerDay,
+      hasActiveShift: !!row.active_shift_id
+    };
+  });
+
+  return team.sort((a, b) => b.totalMinutes - a.totalMinutes);
+}
+
+/**
  * Điều chỉnh giờ làm việc (hỗ trợ chọn Nick cụ thể và ngày làm việc cụ thể;
  * nếu không truyền accountCode, tự động gắn vào Nick gần nhất mà nhân sự đã cày trong ngày đó)
  */

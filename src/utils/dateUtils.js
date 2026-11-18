@@ -248,6 +248,66 @@ export function smartParseDate(raw) {
 }
 
 /**
+ * Các mốc thời gian chọn nhanh dùng chung cho /report (Slash Command choices & Select Menu)
+ */
+export const REPORT_RANGE_PRESETS = [
+  { value: 'today', label: '📌 Hôm nay / 오늘', description: 'Bảng xếp hạng chu kỳ làm việc hôm nay' },
+  { value: 'yesterday', label: '⏮️ Hôm qua / 어제', description: 'Bảng xếp hạng chu kỳ ngày hôm qua' },
+  { value: 'last_7_days', label: '📆 7 ngày gần nhất / 최근 7일', description: 'Tổng hợp giờ làm 7 ngày qua đến hôm nay' },
+  { value: 'last_14_days', label: '📆 14 ngày gần nhất / 최근 14일', description: 'Tổng hợp giờ làm 14 ngày qua đến hôm nay' },
+  { value: 'last_30_days', label: '📆 30 ngày gần nhất / 최근 30일', description: 'Tổng hợp giờ làm 30 ngày qua đến hôm nay' },
+  { value: 'this_week', label: '🗓️ Tuần này (T2 → nay) / 이번 주', description: 'Tổng hợp từ Thứ 2 tuần này đến hôm nay' },
+  { value: 'last_week', label: '🗓️ Tuần trước (T2 → CN) / 지난 주', description: 'Tổng hợp trọn tuần trước (Thứ 2 → Chủ Nhật)' },
+  { value: 'this_month', label: '🗓️ Tháng này / 이번 달', description: 'Tổng hợp từ đầu tháng đến hôm nay' },
+  { value: 'last_month', label: '🗓️ Tháng trước / 지난 달', description: 'Tổng hợp trọn tháng trước' }
+];
+
+/**
+ * Quy đổi mã preset thành { from, to, isSingleDay, label } theo múi giờ & mốc cut-off
+ */
+export function resolveReportRangePreset(preset = 'today', now = new Date(), cutoffHour = config.cutoffHour, timeZone = config.timezone) {
+  const workToday = getWorkDateIso(now, cutoffHour, timeZone);
+  const [yStr, mStr] = workToday.split('-');
+  const curYear = parseInt(yStr, 10);
+  const curMonth = parseInt(mStr, 10);
+  const weekday = new Date(`${workToday}T12:00:00Z`).getUTCDay();
+  const diffToMon = weekday === 0 ? -6 : 1 - weekday;
+  const startOfWeekIso = addDaysToIso(workToday, diffToMon);
+
+  const prevMonth = curMonth === 1 ? 12 : curMonth - 1;
+  const prevYear = curMonth === 1 ? curYear - 1 : curYear;
+  const lastMonthRange = getMonthRangeIso(prevYear, prevMonth);
+  const thisMonthStart = `${curYear}-${pad2(curMonth)}-01`;
+
+  switch (preset) {
+    case 'yesterday': {
+      const yest = addDaysToIso(workToday, -1);
+      return { from: yest, to: yest, isSingleDay: true, label: 'Hôm qua / 어제' };
+    }
+    case 'last_7_days':
+      return { from: addDaysToIso(workToday, -6), to: workToday, isSingleDay: false, label: '7 ngày gần nhất / 최근 7일' };
+    case 'last_14_days':
+      return { from: addDaysToIso(workToday, -13), to: workToday, isSingleDay: false, label: '14 ngày gần nhất / 최근 14일' };
+    case 'last_30_days':
+      return { from: addDaysToIso(workToday, -29), to: workToday, isSingleDay: false, label: '30 ngày gần nhất / 최근 30일' };
+    case 'this_week':
+      return { from: startOfWeekIso, to: workToday, isSingleDay: startOfWeekIso === workToday, label: 'Tuần này / 이번 주' };
+    case 'last_week': {
+      const lastWeekStart = addDaysToIso(startOfWeekIso, -7);
+      const lastWeekEnd = addDaysToIso(startOfWeekIso, -1);
+      return { from: lastWeekStart, to: lastWeekEnd, isSingleDay: false, label: 'Tuần trước / 지난 주' };
+    }
+    case 'this_month':
+      return { from: thisMonthStart, to: workToday, isSingleDay: thisMonthStart === workToday, label: 'Tháng này / 이번 달' };
+    case 'last_month':
+      return { from: lastMonthRange.from, to: lastMonthRange.to, isSingleDay: false, label: 'Tháng trước / 지난 달' };
+    case 'today':
+    default:
+      return { from: workToday, to: workToday, isSingleDay: true, label: 'Hôm nay / 오늘' };
+  }
+}
+
+/**
  * Tạo danh sách gợi ý Autocomplete ngày cho Slash Commands (/export, /report, /check-user)
  */
 export function buildDateAutocompleteChoices(focusedValue = '', { includeRangeShortcuts = false } = {}) {
@@ -333,11 +393,12 @@ export function buildDateAutocompleteChoices(focusedValue = '', { includeRangeSh
     }
   }
 
-  // C. Nếu user gõ chữ hoặc ngày trong tháng (vd "2026-10") chưa match đủ -> bổ sung thêm một số ngày trong tháng
-  if (choices.length < 10 && !query) {
-    for (let d = 1; d <= 28; d += 5) {
-      const iso = `${curYear}-${pad2(curMonth)}-${pad2(d)}`;
-      pushChoice(`📅 Ngày ${pad2(d)}/${pad2(curMonth)}/${curYear} [${iso}]`, iso);
+  // C. Nếu chưa đủ 25 gợi ý và user chưa gõ lọc -> điền tiếp các ngày gần nhất để bấm chọn 1 chạm
+  if (choices.length < 25 && !query) {
+    for (let offset = 7; offset <= 26 && choices.length < 25; offset++) {
+      const iso = addDaysToIso(todayIso, -offset);
+      const [yy, mm, dd] = iso.split('-');
+      pushChoice(`📅 ${dd}/${mm}/${yy} (${offset} ngày trước) [${iso}]`, iso);
     }
   }
 

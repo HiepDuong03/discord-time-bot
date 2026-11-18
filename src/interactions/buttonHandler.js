@@ -22,6 +22,7 @@ import {
 } from '../services/shiftService.js';
 import { getHoursUntilCutoff } from '../services/reminderService.js';
 import { buildAccountStatusEmbed } from '../commands/accStatus.js';
+import { buildReportPayload } from '../commands/report.js';
 import { config } from '../config/env.js';
 import { formatTimeInTz } from '../utils/dateUtils.js';
 import { formatMinutes, createProgressBar } from '../utils/formatUtils.js';
@@ -388,6 +389,15 @@ export async function handleButtonInteraction(interaction) {
  * Xử lý khi Member chọn mục từ Select Menu (Chọn Nick game)
  */
 export async function handleSelectMenuInteraction(interaction) {
+  if (interaction.customId === 'select_report_range') {
+    const selectedPreset = interaction.values[0];
+    const payload = await buildReportPayload({
+      preset: selectedPreset,
+      guild: interaction.guild
+    });
+    return interaction.update(payload);
+  }
+
   if (interaction.customId !== 'select_checkin_account') return;
 
   const { user, member } = interaction;
