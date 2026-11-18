@@ -12,15 +12,9 @@ export async function generateDailyBarChartUrl(workDate, customTeamData = null) 
   const targetHour = 8.0;
 
   const backgroundColors = dataHours.map(h => {
-    if (h >= targetHour) return 'rgba(46, 204, 113, 0.85)'; // Xanh lá
-    if (h >= 4.0) return 'rgba(241, 196, 15, 0.85)';       // Vàng
-    return 'rgba(231, 76, 60, 0.85)';                     // Đỏ
-  });
-
-  const borderColors = dataHours.map(h => {
-    if (h >= targetHour) return 'rgb(39, 174, 96)';
-    if (h >= 4.0) return 'rgb(212, 172, 13)';
-    return 'rgb(192, 57, 43)';
+    if (h >= targetHour) return '#2ecc71'; // Xanh lá
+    if (h >= 4.0) return '#f1c40f';       // Vàng
+    return '#e74c3c';                     // Đỏ
   });
 
   const chart = new QuickChart();
@@ -37,8 +31,7 @@ export async function generateDailyBarChartUrl(workDate, customTeamData = null) 
           label: 'Số giờ / 근무 시간 (h)',
           data: dataHours,
           backgroundColor: backgroundColors,
-          borderColor: borderColors,
-          borderWidth: 2,
+          borderWidth: 0,
           borderRadius: 6
         }
       ]
@@ -105,5 +98,11 @@ export async function generateDailyBarChartUrl(workDate, customTeamData = null) 
     }
   });
 
-  return chart.getUrl();
+  const url = chart.getUrl();
+  if (url.length <= 2000) {
+    return url;
+  }
+
+  // Fallback sang short URL nếu danh sách nhân sự quá dài vượt giới hạn 2048 ký tự của Discord Embed
+  return await chart.getShortUrl();
 }
