@@ -14,15 +14,17 @@ export async function generateDailyBarChartUrl(workDate, customTeamData = null, 
 
   const backgroundColors = teamData.map((m, idx) => {
     const h = dataHours[idx];
+    const memberTarget = Number(m.targetHours || targetHour);
+    const halfTarget = memberTarget / 2;
     if (isRange) {
       const avgDailyH = m.activeDays > 0 ? h / m.activeDays : 0;
-      if (avgDailyH >= targetHour) return '#2ecc71';
-      if (avgDailyH >= 4.0) return '#f1c40f';
+      if (avgDailyH >= memberTarget) return '#2ecc71';
+      if (avgDailyH >= halfTarget) return '#f1c40f';
       return '#e74c3c';
     }
-    if (h >= targetHour) return '#2ecc71'; // Xanh lá
-    if (h >= 4.0) return '#f1c40f';       // Vàng
-    return '#e74c3c';                     // Đỏ
+    if (h >= memberTarget) return '#2ecc71'; // Xanh lá
+    if (h >= halfTarget) return '#f1c40f';   // Vàng
+    return '#e74c3c';                       // Đỏ
   });
 
   const maxDataHour = Math.max(0, ...dataHours);

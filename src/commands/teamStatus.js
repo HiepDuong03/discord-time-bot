@@ -64,7 +64,8 @@ export async function execute(interaction) {
         );
       } else if (m && m.totalMinutes > 0) {
         const totalStr = formatMinutes(m.totalMinutes);
-        const icon = m.isAchieved ? '🌟' : m.totalMinutes >= 240 ? '🟡' : '🔴';
+        const halfTargetMins = ((m.targetHours ?? config.dailyTargetHours) * 60) / 2;
+        const icon = m.isAchieved ? '🌟' : m.totalMinutes >= halfTargetMins ? '🟡' : '🔴';
         const statusNote = m.isAchieved ? `Đạt ${targetStr} SLA (달성)` : `Thiếu ${formatMinutes(m.remainingMinutes)} (미달)`;
         offWorkers.push(
           `• ${icon} **${dName}** (<@${did}>) ➔ \`${totalStr} / ${targetStr}\` (${statusNote})`
@@ -86,7 +87,8 @@ export async function execute(interaction) {
           `• 🟢 **${m.displayName}** (<@${m.discordId}>) ➔ Ca này / 이번: **${m.activeMinutes}분** | Tổng / 누적: \`${totalStr} / ${targetStr}\``
         );
       } else {
-        const icon = m.isAchieved ? '🌟' : m.totalMinutes >= 240 ? '🟡' : '🔴';
+        const halfTargetMins = ((m.targetHours ?? config.dailyTargetHours) * 60) / 2;
+        const icon = m.isAchieved ? '🌟' : m.totalMinutes >= halfTargetMins ? '🟡' : '🔴';
         const statusNote = m.isAchieved ? `Đạt ${targetStr} SLA (달성)` : `Thiếu ${neededStr} (미달)`;
         offWorkers.push(
           `• ${icon} **${m.displayName}** (<@${m.discordId}>) ➔ \`${totalStr} / ${targetStr}\` (${statusNote})`

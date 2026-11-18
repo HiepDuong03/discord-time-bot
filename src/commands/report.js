@@ -147,8 +147,9 @@ export async function buildReportPayload({ preset = null, date = null, from = nu
     const timeStr = formatMinutes(member.totalMinutes);
 
     if (isSingleDay) {
-      const targetStr = Number(member.targetHours || config.dailyTargetHours).toFixed(1);
-      const icon = member.isAchieved ? '🟢' : member.totalMinutes >= 240 ? '🟡' : '🔴';
+      const targetNum = Number(member.targetHours || config.dailyTargetHours);
+      const targetStr = targetNum.toFixed(1);
+      const icon = member.isAchieved ? '🟢' : member.totalMinutes >= (targetNum * 60) / 2 ? '🟡' : '🔴';
       const statusText = member.isAchieved
         ? `🌟 Đạt ${targetStr}h (달성)`
         : `Thiếu ${formatMinutes(member.remainingMinutes)} (미달)`;

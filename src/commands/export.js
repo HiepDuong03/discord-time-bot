@@ -148,6 +148,7 @@ export async function execute(interaction) {
 
     const targetRate = 0.9;
     const rate = summary.daysCount > 0 ? (summary.passedCount / summary.daysCount) : 0;
+    const staffRate = summary.staffDaysCount > 0 ? (summary.staffPassedCount / summary.staffDaysCount) : 0;
     const isGood = rate >= targetRate;
     const color = isGood ? '#16A34A' : '#F59E0B';
 
@@ -157,7 +158,7 @@ export async function execute(interaction) {
         `> **BÁO CÁO TỔNG HỢP & KIỂM TOÁN GIỜ CÀY GAME**\n` +
         `> *Game Farming Timesheet & SLA Audit Report*\n\n` +
         `**Kỳ báo cáo / 기간:** \`${fromDate}\` → \`${toDate}\`\n` +
-        `**Chuẩn SLA / 기준:** \`8.0h / ngày\``
+        `**Chế độ KPI / 기준:** Theo KPI riêng từng nhân sự (4h/6h/8h) & SLA từng Nick`
       )
       .setColor(color)
       .addFields(
@@ -165,16 +166,22 @@ export async function execute(interaction) {
         { name: 'Nhân sự · 근무자', value: `**${summary.staffCount} người**`, inline: true },
         { name: 'Nick game · 계정', value: `**${summary.nickCount} nick**`, inline: true },
         {
-          name: 'Tỉ lệ đạt SLA · 달성률',
+          name: 'Đạt KPI Nhân sự · 개인 목표 달성',
+          value: `**${Math.round(staffRate * 100)}%** (${summary.staffPassedCount ?? 0}/${summary.staffDaysCount ?? 0} lượt ngày·người)`,
+          inline: true
+        },
+        {
+          name: 'Đạt SLA Nick · 계정 SLA 달성',
           value: `**${Math.round(rate * 100)}%** (${summary.passedCount}/${summary.daysCount} lượt ngày·nick)`,
-          inline: false
+          inline: true
         }
       );
 
     if (summary.deficits && summary.deficits.length > 0) {
       const lines = summary.deficits.slice(0, 5).map(item => {
         const datePart = item.date.slice(5);
-        return `• \`${datePart}\` · **${item.nick}** · ${item.staff} ➔ **${item.hours.toFixed(1)}h**`;
+        const targetStr = Number(item.targetHours || 8).toFixed(1);
+        return `• \`${datePart}\` · **${item.nick}** (${item.staff}) ➔ **${item.hours.toFixed(1)}/${targetStr}h**`;
       });
       const more = summary.deficits.length - 5;
       if (more > 0) {

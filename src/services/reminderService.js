@@ -58,7 +58,8 @@ export async function sendDailyReminders(client, alertType = '18_PM') {
       let alertContentKo = '';
 
       if (alertType === '18_PM') {
-        if (member.totalMinutes < 240) { // Dưới 4 tiếng
+        const halfTargetMins = Math.round((Number(member.targetHours || config.dailyTargetHours) * 60) / 2);
+        if (member.totalMinutes < halfTargetMins) { // Dưới 50% chỉ tiêu cá nhân
           shouldAlert = true;
           alertContentVi = `Mới làm **${completedHours}h/${member.targetHours}h** (Còn thiếu **${neededHours}h**). Tranh thủ vào ca nhé!`;
           alertContentKo = `현재 **${completedHours}시간/${member.targetHours}시간** 근무 (남은 시간: **${neededHours}시간**). 근무를 진행해주세요!`;
